@@ -18,14 +18,14 @@ class HelloControllerTest {
     @Test
     void hello_returnsHelloUSA() throws Exception {
         mockMvc.perform(get("/api/hello"))
-                .andExpected(status().isOk())
+                .andExpect(status().isOk())
                 .andExpect(content().string("Hello USA"));
     }
 
     @Test
     void hello_returnsHelloWorld() throws Exception {
         mockMvc.perform(get("/api/hello"))
-                .andExpected(status().isOk())
+                .andExpect(status().isOk())
                 .andExpect(content().string("Hello World"));
     }
 }
