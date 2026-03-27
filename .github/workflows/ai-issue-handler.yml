@@ -38,53 +38,61 @@ jobs:
           echo "BRANCH=$BRANCH" >> $GITHUB_ENV
 
       - name: Gather project context
-        id: context
         run: |
-          TREE=$(find backend/src frontend/src -type f \( -name '*.java' -o -name '*.js' \) \
+          find backend/src frontend/src -type f \( -name '*.java' -o -name '*.js' \) \
             | head -50 | while read f; do
               echo "=== FILE: $f ==="
               cat "$f"
-            done)
-          echo "tree<<CTXEOF" >> $GITHUB_OUTPUT
-          echo "$TREE" >> $GITHUB_OUTPUT
-          echo "CTXEOF" >> $GITHUB_OUTPUT
+            done > /tmp/project_context.txt
 
       - name: Ask Claude to generate changes
-        id: claude
         shell: bash
         run: |
           ISSUE_TITLE="${{ github.event.issue.title }}"
-          ISSUE_BODY=$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH")
           ISSUE_LABEL="${{ github.event.label.name }}"
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          ISSUE_BODY=$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH")
+          PROJECT_CONTEXT=$(cat /tmp/project_context.txt)
 
-          # Build the prompt
-          PROMPT="ISSUE #${{ github.event.issue.number }} (${ISSUE_LABEL}): ${ISSUE_TITLE}
-
+          PROMPT="ISSUE #${ISSUE_NUMBER} (${ISSUE_LABEL}): ${ISSUE_TITLE}
           Description:
           ${ISSUE_BODY}
-
           Current codebase:
-          ${{ steps.context.outputs.tree }}"
+          ${PROJECT_CONTEXT}"
 
-          # Build JSON payload using jq to handle escaping
-          PAYLOAD=$(jq -n \
+          SYSTEM_MSG="You are a senior software engineer. You will receive a GitHub issue and the current codebase. Generate the necessary code changes. IMPORTANT RULES: 1. ALWAYS write test cases FIRST (TDD approach). 2. For Java: create JUnit 5 tests. For React: create Jest/RTL tests. 3. Output ONLY a JSON array of file operations. 4. Each element must have path, action (create or modify), and content (full file content). 5. For modify, provide the COMPLETE updated file content. 6. Never remove existing tests. 7. Keep the code simple and production-quality. 8. Return RAW JSON only, no markdown fences, no explanation."
+
+          jq -n \
             --arg model "claude-sonnet-4-20250514" \
-            --arg system "You are a senior software engineer. You will receive a GitHub issue and the current codebase. Generate the necessary code changes. IMPORTANT RULES: 1. ALWAYS write test cases FIRST (TDD approach). 2. For Java: create JUnit 5 tests. For React: create Jest/RTL tests. 3. Output ONLY a JSON array of file operations. 4. Each element: {\"path\": \"relative/path\", \"action\": \"create|modify\", \"content\": \"full file content\"}. 5. For modify, provide the COMPLETE updated file content. 6. Never remove existing tests. 7. Keep the code simple and production-quality. 8. Return RAW JSON only — no markdown fences, no explanation." \
+            --arg system "$SYSTEM_MSG" \
             --arg prompt "$PROMPT" \
             '{
               model: $model,
               max_tokens: 8192,
               system: $system,
               messages: [{role: "user", content: $prompt}]
-            }')
+            }' > /tmp/payload.json
 
-          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+          echo "=== Payload built, calling Claude API ==="
+
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/claude_response.json \
+            https://api.anthropic.com/v1/messages \
             -H "content-type: application/json" \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
-            -d "$PAYLOAD")
+            -d @/tmp/payload.json)
 
-          echo "$RESPONSE" | jq -r '.content[0].text' > /tmp/claude_changes.json
+          echo "=== Claude API returned HTTP $HTTP_CODE ==="
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "API Error:"
+            cat /tmp/claude_response.json
+            exit 1
+          fi
+
+          jq -r '.content[0].text' /tmp/claude_response.json > /tmp/claude_changes.json
+          echo "=== Claude response saved ==="
+          head -5 /tmp/claude_changes.json
 
       - name: Apply changes
         run: |
