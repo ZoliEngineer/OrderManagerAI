@@ -64,7 +64,8 @@ resource "azurerm_linux_web_app" "backend" {
   }
 
   app_settings = {
-    WEBSITES_PORT = "8080"
+    WEBSITES_PORT                  = "8080"
+    DOCKER_REGISTRY_SERVER_PASSWORD = azurerm_container_registry.acr.admin_password
   }
 }
 
@@ -85,7 +86,8 @@ resource "azurerm_linux_web_app" "frontend" {
   }
 
   app_settings = {
-    BACKEND_URL   = "https://${azurerm_linux_web_app.backend.default_hostname}"
-    WEBSITES_PORT = "80"
+    BACKEND_URL                    = "https://${azurerm_linux_web_app.backend.default_hostname}"
+    WEBSITES_PORT                  = "80"
+    DOCKER_REGISTRY_SERVER_PASSWORD = azurerm_container_registry.acr.admin_password
   }
 }

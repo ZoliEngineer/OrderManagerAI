@@ -1,13 +1,13 @@
 name: Deploy to Azure
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI — Build & Test"]
+    types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
-  checks: write
 
 jobs:
   # ── Gate: tests must pass first ──────────────────────
@@ -16,7 +16,7 @@ jobs:
 
   # ── Build & Push Docker images ───────────────────────
   build-and-deploy:
-    needs: test
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
