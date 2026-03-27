@@ -78,13 +78,13 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: ordermanagerai-prod-backend
-          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanager-backend:${{ github.sha }}
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-backend:${{ github.sha }}
 
       - name: Deploy frontend
         uses: azure/webapps-deploy@v3
         with:
           app-name: ordermanagerai-prod-frontend
-          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanager-frontend:${{ github.sha }}
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-frontend:${{ github.sha }}
 
       - name: Smoke test
         run: |
