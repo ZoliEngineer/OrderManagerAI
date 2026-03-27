@@ -1,0 +1,97 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Gate: tests must pass first ──────────────────────
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  # ── Build & Push Docker images ───────────────────────
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Build artifacts
+      - name: Build backend JAR
+        run: cd backend && mvn clean package -DskipTests -B
+
+      - name: Build frontend
+        run: |
+          cd frontend && npm ci && npm run build
+
+      # Docker build & push
+      - name: Login to ACR
+        run: |
+          echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" \
+            -u "$ACR_USERNAME" --password-stdin
+
+      - name: Build and push backend image
+        run: |
+          TAG="${ACR_LOGIN_SERVER}/hello-backend:${{ github.sha }}"
+          TAG_LATEST="${ACR_LOGIN_SERVER}/hello-backend:latest"
+          docker build -t "$TAG" -t "$TAG_LATEST" backend/
+          docker push "$TAG"
+          docker push "$TAG_LATEST"
+
+      - name: Build and push frontend image
+        run: |
+          TAG="${ACR_LOGIN_SERVER}/hello-frontend:${{ github.sha }}"
+          TAG_LATEST="${ACR_LOGIN_SERVER}/hello-frontend:latest"
+          docker build \
+            --build-arg REACT_APP_API_URL="https://helloai-prod-backend.azurewebsites.net" \
+            -t "$TAG" -t "$TAG_LATEST" frontend/
+          docker push "$TAG"
+          docker push "$TAG_LATEST"
+
+      # Deploy to Azure App Service
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy backend
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: helloai-prod-backend
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/hello-backend:${{ github.sha }}
+
+      - name: Deploy frontend
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: helloai-prod-frontend
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/hello-frontend:${{ github.sha }}
+
+      - name: Smoke test
+        run: |
+          echo "Waiting 30s for deployment to stabilize..."
+          sleep 30
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            https://helloai-prod-backend.azurewebsites.net/api/hello)
+          if [ "$STATUS" -ne 200 ]; then
+            echo "❌ Smoke test failed (HTTP $STATUS)"
+            exit 1
+          fi
+          echo "✅ Smoke test passed"

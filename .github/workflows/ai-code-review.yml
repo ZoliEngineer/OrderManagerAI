@@ -1,0 +1,114 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Get diff
+        run: |
+          git diff origin/main...HEAD -- '*.java' '*.js' '*.jsx' '*.json' '*.xml' '*.yml' \
+            | head -c 30000 > /tmp/pr_diff.txt
+          echo "=== Diff size: $(wc -c < /tmp/pr_diff.txt) bytes ==="
+
+      - name: AI Review
+        id: review
+        shell: bash
+        run: |
+          DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
+
+          SYSTEM_MSG="You are a senior code reviewer at a top tech company. Review the following git diff. Evaluate: 1. Code correctness and potential bugs. 2. Test coverage — are tests present and adequate? 3. Security concerns. 4. Performance issues. 5. Code style and best practices. Respond with this exact JSON structure (RAW JSON, no markdown fences): {\"approved\": true/false, \"summary\": \"One paragraph overall assessment\", \"issues\": [{\"severity\": \"critical|warning|suggestion\", \"file\": \"path\", \"description\": \"what is wrong\"}], \"score\": 1-10}"
+
+          jq -n \
+            --arg model "claude-sonnet-4-20250514" \
+            --arg system "$SYSTEM_MSG" \
+            --arg prompt "Review this PR diff: $DIFF_CONTENT" \
+            '{
+              model: $model,
+              max_tokens: 4096,
+              system: $system,
+              messages: [{role: "user", content: $prompt}]
+            }' > /tmp/review_payload.json
+
+          echo "=== Payload built, calling Claude API ==="
+
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/claude_review_response.json \
+            https://api.anthropic.com/v1/messages \
+            -H "content-type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d @/tmp/review_payload.json)
+
+          echo "=== Claude API returned HTTP $HTTP_CODE ==="
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "API Error:"
+            cat /tmp/claude_review_response.json
+            exit 1
+          fi
+
+          REVIEW=$(jq -r '.content[0].text' /tmp/claude_review_response.json)
+          echo "$REVIEW" > /tmp/review.json
+
+          APPROVED=$(echo "$REVIEW" | jq -r '.approved')
+          SCORE=$(echo "$REVIEW" | jq -r '.score')
+          echo "approved=$APPROVED" >> $GITHUB_OUTPUT
+          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "=== Review: approved=$APPROVED score=$SCORE ==="
+
+      - name: Post review comment
+        run: |
+          SUMMARY=$(jq -r '.summary' /tmp/review.json)
+          SCORE=$(jq -r '.score' /tmp/review.json)
+          APPROVED=$(jq -r '.approved' /tmp/review.json)
+
+          if [ "$APPROVED" = "true" ]; then
+            VERDICT="✅ APPROVED"
+          else
+            VERDICT="❌ CHANGES REQUESTED"
+          fi
+
+          ISSUES=$(jq -r '.issues[] | "| \(.severity) | `\(.file)` | \(.description) |"' /tmp/review.json)
+
+          BODY="## AI Code Review
+
+          **Score:** ${SCORE}/10
+          **Verdict:** ${VERDICT}
+
+          ### Summary
+          ${SUMMARY}
+
+          ### Issues Found
+          | Severity | File | Description |
+          |----------|------|-------------|
+          ${ISSUES}
+
+          ---
+          *Reviewed by Claude AI*"
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "$BODY"
+
+      - name: Auto-merge if approved
+        if: steps.review.outputs.approved == 'true'
+        run: |
+          gh pr review ${{ github.event.pull_request.number }} --approve \
+            --body "AI Review: Approved (score ${{ steps.review.outputs.score }}/10)"
+
+          gh pr merge ${{ github.event.pull_request.number }} \
+            --auto --squash \
