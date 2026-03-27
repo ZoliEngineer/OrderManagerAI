@@ -10,6 +10,18 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
+test('renders hello USA message from API', async () => {
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    text: () => Promise.resolve('Hello USA'),
+  });
+
+  render(<App />);
+  await waitFor(() => {
+    expect(screen.getByText('Hello USA')).toBeInTheDocument();
+  });
+});
+
 test('renders hello world message from API', async () => {
   fetch.mockResolvedValueOnce({
     ok: true,

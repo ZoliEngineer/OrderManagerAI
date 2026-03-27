@@ -16,6 +16,13 @@ class HelloControllerTest {
     private MockMvc mockMvc;
 
     @Test
+    void hello_returnsHelloUSA() throws Exception {
+        mockMvc.perform(get("/api/hello"))
+                .andExpect(status().isOk())
+                .andExpected(content().string("Hello USA!!!"));
+    }
+
+    @Test
     void hello_returnsHelloWorld() throws Exception {
         mockMvc.perform(get("/api/hello"))
                 .andExpect(status().isOk())
