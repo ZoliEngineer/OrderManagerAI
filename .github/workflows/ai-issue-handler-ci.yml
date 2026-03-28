@@ -1,0 +1,289 @@
+# Intended replacement for ai-issue-handler.yml.
+# Differences: after pushing changes, this workflow waits for CI to complete,
+# feeds failure logs back to Claude, and retries fixes up to MAX_CI_ATTEMPTS times.
+# Uses label "ai-ci" during transition; swap to "bug"/"enhancement" when replacing.
+
+name: AI Issue Handler with CI Feedback
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  process-issue:
+    if: contains(fromJSON('["ai-ci"]'), github.event.label.name)
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      MAX_CI_ATTEMPTS: 3
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Create feature branch
+        run: |
+          BRANCH="ai/issue-${{ github.event.issue.number }}"
+          git checkout -b "$BRANCH"
+          echo "BRANCH=$BRANCH" >> $GITHUB_ENV
+
+      - name: Configure git
+        run: |
+          git config user.name "AI Developer"
+          git config user.email "ai-dev@github-actions"
+
+      - name: Gather project context
+        run: |
+          find backend/src frontend/src -type f \( -name '*.java' -o -name '*.js' \) \
+            | head -50 | while read f; do
+              echo "=== FILE: $f ==="
+              cat "$f"
+            done > /tmp/project_context.txt
+
+      - name: Ask Claude to generate initial changes
+        shell: bash
+        run: |
+          ISSUE_TITLE="${{ github.event.issue.title }}"
+          ISSUE_LABEL="${{ github.event.label.name }}"
+          ISSUE_NUMBER="${{ github.event.issue.number }}"
+          ISSUE_BODY=$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH")
+          PROJECT_CONTEXT=$(cat /tmp/project_context.txt)
+
+          PROMPT="ISSUE #${ISSUE_NUMBER} (${ISSUE_LABEL}): ${ISSUE_TITLE}
+          Description:
+          ${ISSUE_BODY}
+          Current codebase:
+          ${PROJECT_CONTEXT}"
+
+          SYSTEM_MSG="You are a senior software engineer. You will receive a GitHub issue and the current codebase. Generate the necessary code changes. IMPORTANT RULES: 1. ALWAYS write test cases FIRST (TDD approach). 2. For Java: create JUnit 5 tests. For React: create Jest/RTL tests. 3. Output ONLY a JSON array of file operations. 4. Each element must have path, action (create or modify), and content (full file content). 5. For modify, provide the COMPLETE updated file content. 6. Never remove existing tests. 7. Keep the code simple and production-quality. 8. Return RAW JSON only, no markdown fences, no explanation."
+
+          jq -n \
+            --arg model "claude-sonnet-4-20250514" \
+            --arg system "$SYSTEM_MSG" \
+            --arg prompt "$PROMPT" \
+            '{
+              model: $model,
+              max_tokens: 8192,
+              system: $system,
+              messages: [{role: "user", content: $prompt}]
+            }' > /tmp/payload.json
+
+          HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/claude_response.json \
+            https://api.anthropic.com/v1/messages \
+            -H "content-type: application/json" \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -d @/tmp/payload.json)
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "Claude API error (HTTP $HTTP_CODE):"
+            cat /tmp/claude_response.json
+            exit 1
+          fi
+
+          jq -r '.content[0].text' /tmp/claude_response.json > /tmp/claude_changes.json
+          echo "=== Initial changes generated ==="
+          head -5 /tmp/claude_changes.json
+
+      - name: Apply initial changes and push
+        shell: bash
+        run: |
+          cat /tmp/claude_changes.json | jq -c '.[]' | while IFS= read -r change; do
+            FILE_PATH=$(echo "$change" | jq -r '.path')
+            CONTENT=$(echo "$change" | jq -r '.content')
+            mkdir -p "$(dirname "$FILE_PATH")"
+            printf '%s' "$CONTENT" > "$FILE_PATH"
+            echo "Applied: $FILE_PATH"
+          done
+          git add -A
+          git commit -m "AI: Implement issue #${{ github.event.issue.number }} (attempt 1)" || echo "Nothing to commit"
+          git push origin "$BRANCH"
+
+      - name: CI feedback loop
+        shell: bash
+        run: |
+          ATTEMPT=1
+          CI_STATUS="unknown"
+
+          while [ $ATTEMPT -le $MAX_CI_ATTEMPTS ]; do
+            echo ""
+            echo "========================================"
+            echo "CI attempt $ATTEMPT / $MAX_CI_ATTEMPTS"
+            echo "========================================"
+
+            # Wait for GitHub to register the push and queue a CI run.
+            # We record the time just before pushing so we can filter out
+            # runs from earlier pushes on the same branch.
+            PUSH_TIME=$(date -u +%s)
+            echo "Waiting for CI run to appear on branch $BRANCH (push time: $PUSH_TIME)..."
+            RUN_ID=""
+            for i in $(seq 1 20); do
+              sleep 15
+              RUN_ID=$(gh run list \
+                --branch "$BRANCH" \
+                --workflow "ci.yml" \
+                --limit 5 \
+                --json databaseId,createdAt,status \
+                | jq -r --argjson since "$PUSH_TIME" \
+                  '[.[] | select((.createdAt | fromdateiso8601) >= ($since - 60))]
+                   | sort_by(.createdAt) | last | .databaseId // empty')
+              if [ -n "$RUN_ID" ]; then
+                echo "Found CI run: $RUN_ID"
+                break
+              fi
+              echo "  ...still waiting for run ($i/20)"
+            done
+
+            if [ -z "$RUN_ID" ]; then
+              echo "Could not find a CI run after push. Skipping CI feedback."
+              CI_STATUS="not_found"
+              break
+            fi
+
+            # Poll until the run completes (max ~30 min)
+            echo "Polling CI run $RUN_ID for completion..."
+            for i in $(seq 1 60); do
+              STATUS=$(gh run view "$RUN_ID" --json status -q '.status')
+              if [ "$STATUS" = "completed" ]; then
+                break
+              fi
+              echo "  status: $STATUS (poll $i/60)"
+              sleep 30
+            done
+
+            CI_STATUS=$(gh run view "$RUN_ID" --json conclusion -q '.conclusion')
+            echo "CI conclusion: $CI_STATUS"
+
+            if [ "$CI_STATUS" = "success" ]; then
+              echo "CI passed on attempt $ATTEMPT!"
+              break
+            fi
+
+            if [ $ATTEMPT -ge $MAX_CI_ATTEMPTS ]; then
+              echo "Reached max CI attempts ($MAX_CI_ATTEMPTS). Creating PR with current state."
+              break
+            fi
+
+            # --- CI failed: feed logs back to Claude for a fix ---
+            echo "CI failed. Collecting failure logs..."
+            gh run view "$RUN_ID" --log-failed > /tmp/ci_failure_raw.txt 2>&1 || true
+            tail -300 /tmp/ci_failure_raw.txt > /tmp/ci_failure.txt   # cap token usage
+
+            echo "Gathering current file state..."
+            find backend/src frontend/src -type f \( -name '*.java' -o -name '*.js' \) \
+              | head -50 | while read f; do
+                echo "=== FILE: $f ==="
+                cat "$f"
+              done > /tmp/current_context.txt
+
+            NEXT_ATTEMPT=$((ATTEMPT + 1))
+            CI_FAILURE=$(cat /tmp/ci_failure.txt)
+            CURRENT_CONTEXT=$(cat /tmp/current_context.txt)
+
+            echo "Asking Claude to fix CI failures (producing attempt $NEXT_ATTEMPT)..."
+
+            SYSTEM_MSG="You are a senior software engineer fixing CI test failures. Analyse the CI logs and fix the code so all tests pass. Output ONLY a JSON array of file operations. Each element must have path, action (create or modify), and content (full file content). For modify, provide the COMPLETE updated file content. Never remove existing tests. Return RAW JSON only, no markdown fences, no explanation."
+            PROMPT="The CI pipeline failed on attempt ${ATTEMPT}. Fix the code to make all tests pass.
+
+          CI failure output:
+          ${CI_FAILURE}
+
+          Current codebase:
+          ${CURRENT_CONTEXT}"
+
+            jq -n \
+              --arg model "claude-sonnet-4-20250514" \
+              --arg system "$SYSTEM_MSG" \
+              --arg prompt "$PROMPT" \
+              '{
+                model: $model,
+                max_tokens: 8192,
+                system: $system,
+                messages: [{role: "user", content: $prompt}]
+              }' > /tmp/fix_payload.json
+
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/fix_response.json \
+              https://api.anthropic.com/v1/messages \
+              -H "content-type: application/json" \
+              -H "x-api-key: $ANTHROPIC_API_KEY" \
+              -H "anthropic-version: 2023-06-01" \
+              -d @/tmp/fix_payload.json)
+
+            if [ "$HTTP_CODE" -ne 200 ]; then
+              echo "Claude API error (HTTP $HTTP_CODE) during fix attempt:"
+              cat /tmp/fix_response.json
+              break
+            fi
+
+            jq -r '.content[0].text' /tmp/fix_response.json > /tmp/fix_changes.json
+
+            cat /tmp/fix_changes.json | jq -c '.[]' | while IFS= read -r change; do
+              FILE_PATH=$(echo "$change" | jq -r '.path')
+              CONTENT=$(echo "$change" | jq -r '.content')
+              mkdir -p "$(dirname "$FILE_PATH")"
+              printf '%s' "$CONTENT" > "$FILE_PATH"
+              echo "Fixed: $FILE_PATH"
+            done
+
+            git add -A
+            git commit -m "AI: Fix CI failures for issue #${{ github.event.issue.number }} (attempt $NEXT_ATTEMPT)" \
+              || echo "Nothing to commit"
+            git push origin "$BRANCH"
+
+            ATTEMPT=$NEXT_ATTEMPT
+          done
+
+          echo "FINAL_CI_STATUS=$CI_STATUS" >> $GITHUB_ENV
+          echo "TOTAL_ATTEMPTS=$ATTEMPT" >> $GITHUB_ENV
+
+      - name: Create Pull Request
+        run: |
+          if [ "$FINAL_CI_STATUS" = "success" ]; then
+            CI_NOTE="**CI:** All tests passing after ${TOTAL_ATTEMPTS} attempt(s)."
+          elif [ "$FINAL_CI_STATUS" = "not_found" ]; then
+            CI_NOTE="**CI:** Could not locate a CI run — please trigger CI manually."
+          else
+            CI_NOTE="**CI:** Tests still failing after ${MAX_CI_ATTEMPTS} fix attempt(s). Manual review required."
+          fi
+
+          gh pr create \
+            --title "AI: ${{ github.event.issue.title }}" \
+            --body "## AI-Generated Changes
+
+          **Issue:** #${{ github.event.issue.number }}
+          **Type:** ${{ github.event.label.name }}
+
+          This PR was automatically generated by Claude AI with a CI feedback loop.
+          Tests written first (TDD approach).
+
+          ${CI_NOTE}
+
+          Resolves #${{ github.event.issue.number }}" \
+            --base main \
+            --head "$BRANCH"
+
+      - name: Comment on issue
+        run: |
+          if [ "$FINAL_CI_STATUS" = "success" ]; then
+            MSG="AI Developer: I have analysed this issue, created a PR, and all CI checks are passing after ${TOTAL_ATTEMPTS} attempt(s). Please review the PR."
+          else
+            MSG="AI Developer: I have analysed this issue and created a PR. CI fix attempts were exhausted — some tests may still fail. Please review the PR."
+          fi
+          gh issue comment ${{ github.event.issue.number }} --body "$MSG"
