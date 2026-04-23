@@ -1,23 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import MarketDataTable from './components/MarketDataTable';
+import './styles/layout.css';
+
+const NAV_ITEMS = [
+  { icon: '▦', label: 'Market Data',  active: true  },
+  { icon: '◈', label: 'Portfolio',    active: false },
+  { icon: '⇅', label: 'Orders',       active: false },
+  { icon: '⊕', label: 'Buy / Sell',   active: false },
+];
 
 function App() {
-  const [message, setMessage] = useState('Loading...');
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const apiUrl = process.env.REACT_APP_API_URL || '';
-    fetch(`${apiUrl}/api/hello`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.text();
-      })
-      .then((data) => setMessage(data))
-      .catch((err) => setError(err.message));
-  }, []);
-
   return (
-    <div style={{ textAlign: 'center', marginTop: '100px', fontFamily: 'sans-serif' }}>
-      <h1>{error ? `Error: ${error}` : message}</h1>
+    <div className="app-shell">
+
+      <header className="topbar">
+        <span className="topbar-logo">Order<span>Manager</span></span>
+        <div className="topbar-divider" />
+        <span className="topbar-status">Market Open</span>
+      </header>
+
+      <div className="app-body">
+
+        <nav className="sidebar">
+          <span className="sidebar-section-label">Navigation</span>
+          {NAV_ITEMS.map((item) => (
+            <div key={item.label} className={`sidebar-item${item.active ? ' active' : ''}`}>
+              <span className="sidebar-item-icon">{item.icon}</span>
+              {item.label}
+            </div>
+          ))}
+        </nav>
+
+        <main className="main-content">
+          <div className="page-header">
+            <h1 className="page-title">Market Data</h1>
+            <span className="page-subtitle">S&amp;P 500 — Top 10</span>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Equities</span>
+            </div>
+            <MarketDataTable />
+          </div>
+        </main>
+
+      </div>
     </div>
   );
 }
