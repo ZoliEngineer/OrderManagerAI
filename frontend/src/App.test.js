@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import App from './App';
 
@@ -13,9 +13,11 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('renders app shell with navigation and market data page', () => {
+test('renders app shell with navigation and market data page', async () => {
   render(<App />);
-  expect(screen.getByText('OrderManager')).toBeInTheDocument();
-  expect(screen.getByText('Market Data')).toBeInTheDocument();
-  expect(screen.getByText('Market Open')).toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByRole('heading', { name: 'Market Data' })).toBeInTheDocument();
+    expect(screen.getByText('Market Open')).toBeInTheDocument();
+    expect(screen.getByText('Equities')).toBeInTheDocument();
+  });
 });
