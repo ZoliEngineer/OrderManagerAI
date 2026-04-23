@@ -5,7 +5,8 @@ import java.math.BigDecimal;
 public record Stock(
         String ticker,
         String name,
-        BigDecimal price
+        BigDecimal price,
+        BigDecimal change
 ) {
 
 }

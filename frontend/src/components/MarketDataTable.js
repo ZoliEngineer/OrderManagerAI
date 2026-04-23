@@ -23,7 +23,14 @@ function MarketDataTable() {
             <td><span className="ticker-badge">{stock.ticker}</span></td>
             <td>{stock.name}</td>
             <td className="align-right">
-              <span className="price-value">${Number(stock.price).toFixed(2)}</span>
+              <span className={`price-value ${stock.change > 0 ? 'price-up' : stock.change < 0 ? 'price-down' : ''}`}>
+                ${Number(stock.price).toFixed(2)}
+              </span>
+              {stock.change != null && (
+                <span className={`price-change ${stock.change > 0 ? 'price-up' : stock.change < 0 ? 'price-down' : 'price-flat'}`}>
+                  {stock.change > 0 ? '+' : ''}{Number(stock.change).toFixed(2)}
+                </span>
+              )}
             </td>
           </tr>
         ))}

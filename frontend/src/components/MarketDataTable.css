@@ -66,6 +66,22 @@
   font-weight: 500;
 }
 
+.price-value.price-up   { color: var(--positive, #22c55e); }
+.price-value.price-down { color: var(--negative, #ef4444); }
+
+.price-change {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.65;
+  margin-top: 1px;
+}
+
+.price-change.price-up   { color: var(--positive, #22c55e); }
+.price-change.price-down { color: var(--negative, #ef4444); }
+.price-change.price-flat { color: var(--text-muted); }
+
 .status-loading {
   padding: 24px 18px;
   color: var(--text-secondary);
