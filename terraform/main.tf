@@ -47,9 +47,9 @@ resource "azurerm_service_plan" "main" {
   sku_name            = "B1"
 }
 
-# ── Backend App Service ─────────────────────────────────
-resource "azurerm_linux_web_app" "backend" {
-  name                = "${local.prefix}-backend"
+# ── Market Data App Service ──────────────────────────────
+resource "azurerm_linux_web_app" "marketdata" {
+  name                = "${local.prefix}-marketdata"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   service_plan_id     = azurerm_service_plan.main.id
@@ -59,7 +59,7 @@ resource "azurerm_linux_web_app" "backend" {
       docker_registry_url      = "https://${azurerm_container_registry.acr.login_server}"
       docker_registry_username = azurerm_container_registry.acr.admin_username
       docker_registry_password = azurerm_container_registry.acr.admin_password
-      docker_image_name        = "ordermanagerai-backend:latest"
+      docker_image_name        = "ordermanagerai-marketdata:latest"
     }
   }
 
@@ -86,7 +86,7 @@ resource "azurerm_linux_web_app" "frontend" {
   }
 
   app_settings = {
-    BACKEND_URL                    = "https://${azurerm_linux_web_app.backend.default_hostname}"
+    BACKEND_URL                    = "https://${azurerm_linux_web_app.marketdata.default_hostname}"
     WEBSITES_PORT                  = "80"
     DOCKER_REGISTRY_SERVER_PASSWORD = azurerm_container_registry.acr.admin_password
   }

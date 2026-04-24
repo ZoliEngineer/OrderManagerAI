@@ -34,7 +34,7 @@ jobs:
 
       # Build artifacts
       - name: Build backend JAR
-        run: cd backend && mvn clean package -DskipTests -B
+        run: cd marketdata && mvn clean package -DskipTests -B
 
       - name: Build frontend
         run: |
@@ -48,9 +48,9 @@ jobs:
 
       - name: Build and push backend image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-backend:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-backend:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" backend/
+          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:${{ github.sha }}"
+          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:latest"
+          docker build -t "$TAG" -t "$TAG_LATEST" marketdata/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
@@ -59,7 +59,7 @@ jobs:
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:latest"
           docker build \
-            --build-arg REACT_APP_API_URL="https://ordermanagerai-prod-backend.azurewebsites.net" \
+            --build-arg REACT_APP_API_URL="https://ordermanagerai-prod-marketdata.azurewebsites.net" \
             -t "$TAG" -t "$TAG_LATEST" frontend/
           docker push "$TAG"
           docker push "$TAG_LATEST"
@@ -73,15 +73,15 @@ jobs:
       - name: Configure backend app settings
         uses: azure/appservice-settings@v1
         with:
-          app-name: ordermanagerai-prod-backend
+          app-name: ordermanagerai-prod-marketdata
           app-settings-json: |
             [{"name": "CORS_ALLOWED_ORIGINS", "value": "https://ordermanagerai-prod-frontend.azurewebsites.net"}]
 
       - name: Deploy backend
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ordermanagerai-prod-backend
-          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-backend:${{ github.sha }}
+          app-name: ordermanagerai-prod-marketdata
+          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-marketdata:${{ github.sha }}
 
       - name: Deploy frontend
         uses: azure/webapps-deploy@v3
@@ -94,7 +94,7 @@ jobs:
           echo "Waiting 30s for deployment to stabilize..."
           sleep 30
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://ordermanagerai-prod-backend.azurewebsites.net/api/hello)
+            https://ordermanagerai-prod-marketdata.azurewebsites.net/api/hello)
           if [ "$STATUS" -ne 200 ]; then
             echo "❌ Smoke test failed (HTTP $STATUS)"
             exit 1
