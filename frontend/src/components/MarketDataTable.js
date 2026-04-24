@@ -26,7 +26,7 @@ function MarketDataTable() {
               <span className={`price-value ${stock.change > 0 ? 'price-up' : stock.change < 0 ? 'price-down' : ''}`}>
                 ${Number(stock.price).toFixed(2)}
               </span>
-              {stock.change != null && (
+              {stock.change !== null && (
                 <span className={`price-change ${stock.change > 0 ? 'price-up' : stock.change < 0 ? 'price-down' : 'price-flat'}`}>
                   {stock.change > 0 ? '+' : ''}{Number(stock.change).toFixed(2)}
                 </span>
