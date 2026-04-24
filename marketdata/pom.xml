@@ -16,7 +16,7 @@
     </properties>
 
     <groupId>com.juzo.ai.ordermanager</groupId>
-    <artifactId>backend</artifactId>
+    <artifactId>marketdata</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 

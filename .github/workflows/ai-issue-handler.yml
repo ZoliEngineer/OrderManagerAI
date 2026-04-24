@@ -39,7 +39,7 @@ jobs:
 
       - name: Gather project context
         run: |
-          find backend/src frontend/src -type f \( -name '*.java' -o -name '*.js' \) \
+          find marketdata/src frontend/src -type f \( -name '*.java' -o -name '*.js' \) \
             | head -50 | while read f; do
               echo "=== FILE: $f ==="
               cat "$f"
@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
 
-          jq -r '.content[0].text' /tmp/claude_response.json > /tmp/claude_changes.json
+          jq -r '.content[0].text' /tmp/claude_response.json | sed '/^```/d' > /tmp/claude_changes.json
           echo "=== Claude response saved ==="
           head -5 /tmp/claude_changes.json
 
@@ -106,7 +106,7 @@ jobs:
 
       - name: Run tests to validate
         run: |
-          cd backend && mvn test -B 2>&1 | tail -20 || true
+          cd marketdata && mvn test -B 2>&1 | tail -20 || true
           cd ../frontend && npm ci && npm test 2>&1 | tail -20 || true
 
       - name: Commit and push

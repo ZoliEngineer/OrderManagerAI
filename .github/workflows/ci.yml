@@ -24,14 +24,14 @@ jobs:
           cache: 'maven'
 
       - name: Run backend tests
-        run: cd backend && mvn clean verify -B
+        run: cd marketdata && mvn clean verify -B
 
       - name: Publish test results
         uses: dorny/test-reporter@v1
         if: always()
         with:
           name: Backend Tests
-          path: backend/target/surefire-reports/*.xml
+          path: marketdata/target/surefire-reports/*.xml
           reporter: java-junit
 
   frontend-test:
