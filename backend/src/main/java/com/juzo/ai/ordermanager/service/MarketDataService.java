@@ -6,7 +6,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -19,6 +22,7 @@ public class MarketDataService {
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
     private final ConcurrentHashMap<String, Stock> stocks = new ConcurrentHashMap<>();
+    private final ExecutorService priceUpdaterExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public MarketDataService() {
         List.of(
@@ -35,8 +39,13 @@ public class MarketDataService {
         ).forEach(s -> stocks.put(s.ticker(), s));
 
         stocks.keySet().forEach(ticker ->
-            Thread.ofVirtual().name("price-updater-" + ticker).start(() -> simulatePriceUpdates(ticker))
+            priceUpdaterExecutor.submit(() -> simulatePriceUpdates(ticker))
         );
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        priceUpdaterExecutor.shutdownNow();
     }
 
     public List<Stock> getStocks() {
