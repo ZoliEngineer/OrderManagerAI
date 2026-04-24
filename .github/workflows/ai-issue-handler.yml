@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
 
-          jq -r '.content[0].text' /tmp/claude_response.json > /tmp/claude_changes.json
+          jq -r '.content[0].text' /tmp/claude_response.json | sed '/^```/d' > /tmp/claude_changes.json
           echo "=== Claude response saved ==="
           head -5 /tmp/claude_changes.json
 
