@@ -5,8 +5,10 @@ import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.ReactiveRedisMessageListenerContainer;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.socket.WebSocketHandler;
+import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Component
@@ -24,9 +26,12 @@ public class MarketDataWebSocketHandler implements WebSocketHandler {
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
-        return session.send(
-            listenerContainer.receive(ChannelTopic.of(redisChannel))
-                .map(message -> session.textMessage(message.getMessage()))
-        );
+        Flux<WebSocketMessage> outbound = listenerContainer
+                .receive(ChannelTopic.of(redisChannel))
+                .map(message -> session.textMessage(message.getMessage()));
+
+        // session.receive() must be consumed so proxy ping/control frames don't
+        // cause back-pressure and trigger connection teardown in Azure's ARR proxy.
+        return session.send(outbound).and(session.receive().then());
     }
 }
