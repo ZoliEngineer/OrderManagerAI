@@ -83,6 +83,13 @@ jobs:
           app-name: ordermanagerai-prod-marketdata
           images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-marketdata:${{ github.sha }}
 
+      - name: Configure frontend app settings
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: ordermanagerai-prod-frontend
+          app-settings-json: |
+            [{"name": "BACKEND_URL", "value": "http://ordermanagerai-prod-marketdata.azurewebsites.net"}]
+
       - name: Deploy frontend
         uses: azure/webapps-deploy@v3
         with:
