@@ -9,6 +9,7 @@ import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,7 @@ public class MarketDataService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataService.class);
 
+    private final AtomicBoolean firstPublishDone = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, Stock> stocks = new ConcurrentHashMap<>();
     private final ExecutorService priceUpdaterExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ReactiveRedisTemplate<String, String> redisTemplate;
@@ -91,13 +93,21 @@ public class MarketDataService {
     private void publish(Stock stock) {
         try {
             String json = objectMapper.writeValueAsString(stock);
-            redisTemplate.convertAndSend(redisChannel, json)
-                    .subscribe(
-                            count -> log.info("Published {} to Redis ({} subscribers)", stock.ticker(), count),
-                            err   -> log.error("Redis publish failed for {}", stock.ticker(), err)
-                    );
+            var send = redisTemplate.convertAndSend(redisChannel, json);
+            send.subscribe(
+                count -> logPublishSuccess(count),
+                err -> log.error("Redis publish failed for {}", stock.ticker(), err)
+            );
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize stock {}", stock.ticker(), e);
+        }
+    }
+
+    private void logPublishSuccess(Long subscriberCount) {
+        if (firstPublishDone.compareAndSet(false, true)) {
+            log.info("Redis connection verified: first price update published successfully ({} subscribers)", subscriberCount);
+        } else {
+            log.debug("Price update published to Redis ({} subscribers)", subscriberCount);
         }
     }
 
