@@ -6,6 +6,8 @@ COPY public/ public/
 COPY src/ src/
 ARG REACT_APP_API_URL=""
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
+ARG REACT_APP_WS_BASE=""
+ENV REACT_APP_WS_BASE=${REACT_APP_WS_BASE}
 RUN npm run build
 
 FROM nginx:alpine

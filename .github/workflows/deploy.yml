@@ -60,6 +60,7 @@ jobs:
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:latest"
           docker build \
             --build-arg REACT_APP_API_URL="https://ordermanagerai-prod-marketdata.azurewebsites.net" \
+            --build-arg REACT_APP_WS_BASE="wss://ordermanagerai-prod-marketdata.azurewebsites.net" \
             -t "$TAG" -t "$TAG_LATEST" frontend/
           docker push "$TAG"
           docker push "$TAG_LATEST"

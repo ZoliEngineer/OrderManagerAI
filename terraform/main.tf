@@ -77,6 +77,7 @@ resource "azurerm_linux_web_app" "frontend" {
   service_plan_id     = azurerm_service_plan.main.id
 
   site_config {
+    websockets_enabled = true
     application_stack {
       docker_registry_url      = "https://${azurerm_container_registry.acr.login_server}"
       docker_registry_username = azurerm_container_registry.acr.admin_username
@@ -86,7 +87,7 @@ resource "azurerm_linux_web_app" "frontend" {
   }
 
   app_settings = {
-    BACKEND_URL                    = "https://${azurerm_linux_web_app.marketdata.default_hostname}"
+    BACKEND_URL                    = "http://${azurerm_linux_web_app.marketdata.default_hostname}"
     WEBSITES_PORT                  = "80"
     DOCKER_REGISTRY_SERVER_PASSWORD = azurerm_container_registry.acr.admin_password
   }
