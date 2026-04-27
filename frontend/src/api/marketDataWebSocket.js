@@ -1,6 +1,7 @@
 export function connectMarketDataStream(onMessage, onError) {
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsBase = process.env.REACT_APP_WS_BASE || `${wsProtocol}//${window.location.host}`;
+  const wsBase = (process.env.REACT_APP_WS_BASE || `${wsProtocol}//${window.location.host}`)
+    .replace(/^wss?:/, wsProtocol);
   const ws = new WebSocket(`${wsBase}/ws/marketdata`);
 
   ws.onmessage = (e) => onMessage(JSON.parse(e.data));
