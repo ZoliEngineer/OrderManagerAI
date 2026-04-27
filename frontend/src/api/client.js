@@ -1,4 +1,4 @@
-const BASE_URL = process.env.REACT_APP_API_URL || '';
+const BASE_URL = process.env.REACT_APP_API_URL ?? '';
 
 async function request(path) {
   const response = await fetch(`${BASE_URL}${path}`);

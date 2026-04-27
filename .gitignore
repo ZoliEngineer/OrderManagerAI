@@ -29,3 +29,7 @@ frontend/node/*
 frontend/build/*
 
 .vscode/settings.json
+
+# Local secrets
+.env
+terraform.tfvars

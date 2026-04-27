@@ -3,18 +3,24 @@ package com.juzo.ai.ordermanager.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.juzo.ai.ordermanager.entity.Stock;
+
+import jakarta.annotation.PreDestroy;
 
 @Service
 public class MarketDataService {
@@ -23,8 +29,16 @@ public class MarketDataService {
 
     private final ConcurrentHashMap<String, Stock> stocks = new ConcurrentHashMap<>();
     private final ExecutorService priceUpdaterExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    private final ReactiveRedisTemplate<String, String> redisTemplate;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final String redisChannel;
 
-    public MarketDataService() {
+    public MarketDataService(ReactiveRedisTemplate<String, String> redisTemplate,
+         @Value("${app.redis.channel.market-prices}") String redisChannel) 
+    {
+        this.redisTemplate = redisTemplate;
+        this.redisChannel = redisChannel;
+
         List.of(
             new Stock("AAPL",  "Apple Inc.",            new BigDecimal("189.30"), BigDecimal.ZERO),
             new Stock("MSFT",  "Microsoft Corp.",       new BigDecimal("415.50"), BigDecimal.ZERO),
@@ -38,18 +52,12 @@ public class MarketDataService {
             new Stock("TSLA",  "Tesla Inc.",            new BigDecimal("177.80"), BigDecimal.ZERO)
         ).forEach(s -> stocks.put(s.ticker(), s));
 
-        stocks.keySet().forEach(ticker ->
-            priceUpdaterExecutor.submit(() -> simulatePriceUpdates(ticker))
-        );
+        stocks.keySet().forEach(ticker -> priceUpdaterExecutor.submit(() -> simulatePriceUpdates(ticker)));
     }
 
     @PreDestroy
     public void shutdown() {
         priceUpdaterExecutor.shutdownNow();
-    }
-
-    public List<Stock> getStocks() {
-        return List.copyOf(stocks.values());
     }
 
     private void simulatePriceUpdates(String ticker) {
@@ -58,7 +66,7 @@ public class MarketDataService {
             try {
                 Thread.sleep(Duration.ofSeconds(1 + random.nextInt(10)));
 
-                stocks.compute(ticker, (key, stock) -> {
+                Stock updated = stocks.compute(ticker, (key, stock) -> {
                     if (stock == null) return null;
                     BigDecimal oldPrice = stock.price();
                     BigDecimal changeFraction = BigDecimal.valueOf(random.nextDouble() * 0.01);
@@ -68,12 +76,32 @@ public class MarketDataService {
                     BigDecimal newPrice = oldPrice.add(signedDelta)
                             .max(BigDecimal.ZERO)
                             .setScale(2, RoundingMode.HALF_UP);
-                    log.info("{} {} -> {} ({})", ticker, oldPrice, newPrice, signedDelta);
                     return new Stock(stock.ticker(), stock.name(), newPrice, signedDelta);
                 });
+
+                if (updated != null) {
+                    publish(updated);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }
+    }
+
+    private void publish(Stock stock) {
+        try {
+            String json = objectMapper.writeValueAsString(stock);
+            redisTemplate.convertAndSend(redisChannel, json)
+                    .subscribe(
+                            count -> log.info("Published {} to Redis ({} subscribers)", stock.ticker(), count),
+                            err   -> log.error("Redis publish failed for {}", stock.ticker(), err)
+                    );
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize stock {}", stock.ticker(), e);
+        }
+    }
+
+    public List<Stock> getStocks() {
+        return new ArrayList<>(stocks.values());
     }
 }
