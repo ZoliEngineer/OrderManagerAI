@@ -5,7 +5,6 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,7 +13,6 @@ import com.juzo.ai.ordermanager.entity.Stock;
 import com.juzo.ai.ordermanager.service.MarketDataService;
 
 @RestController
-@CrossOrigin(origins = "${cors.allowed-origins}")
 public class MarketDataController {
 
     private static final Logger log = LoggerFactory.getLogger(MarketDataController.class);

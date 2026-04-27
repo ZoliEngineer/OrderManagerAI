@@ -1,9 +1,35 @@
-import React from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import useMarketData from '../hooks/useMarketData';
 import './MarketDataTable.css';
 
 function MarketDataTable() {
   const { stocks, loading, error } = useMarketData();
+  const prevPrices = useRef({});
+  const [flashMap, setFlashMap] = useState({});
+
+  useEffect(() => {
+    const newFlashes = {};
+    stocks.forEach(({ ticker, price }) => {
+      const prev = prevPrices.current[ticker];
+      if (prev !== undefined && prev !== price) {
+        newFlashes[ticker] = price > prev ? 'flash-up' : 'flash-down';
+      }
+      prevPrices.current[ticker] = price;
+    });
+
+    if (Object.keys(newFlashes).length === 0) return;
+
+    setFlashMap(prev => ({ ...prev, ...newFlashes }));
+    const timer = setTimeout(() => {
+      setFlashMap(prev => {
+        const next = { ...prev };
+        Object.keys(newFlashes).forEach(t => delete next[t]);
+        return next;
+      });
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, [stocks]);
 
   if (loading) return <p className="status-loading">Loading market data...</p>;
   if (error)   return <p className="status-error">Error: {error}</p>;
@@ -19,7 +45,7 @@ function MarketDataTable() {
       </thead>
       <tbody>
         {stocks.map((stock) => (
-          <tr key={stock.ticker}>
+          <tr key={stock.ticker} className={flashMap[stock.ticker] || ''}>
             <td><span className="ticker-badge">{stock.ticker}</span></td>
             <td>{stock.name}</td>
             <td className="align-right">
