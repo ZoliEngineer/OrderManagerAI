@@ -36,7 +36,7 @@ jobs:
           SYSTEM_MSG="You are a senior code reviewer at a top tech company. Review the following git diff. Evaluate: 1. Code correctness and potential bugs. 2. Test coverage — are tests present and adequate? 3. Security concerns. 4. Performance issues. 5. Code style and best practices. Respond with this exact JSON structure (RAW JSON, no markdown fences): {\"approved\": true/false, \"summary\": \"One paragraph overall assessment\", \"issues\": [{\"severity\": \"critical|warning|suggestion\", \"file\": \"path\", \"description\": \"what is wrong\"}], \"score\": 1-10}"
 
           jq -n \
-            --arg model "claude-sonnet-4-20250514" \
+            --arg model "claude-sonnet-4-6" \
             --arg system "$SYSTEM_MSG" \
             --arg prompt "Review this PR diff: $DIFF_CONTENT" \
             '{
