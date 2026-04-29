@@ -9,3 +9,7 @@ output "marketdata_url" {
 output "frontend_url" {
   value = "https://${azurerm_linux_web_app.frontend.default_hostname}"
 }
+
+output "key_vault_uri" {
+  value = azurerm_key_vault.main.vault_uri
+}
