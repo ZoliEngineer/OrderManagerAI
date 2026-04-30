@@ -52,6 +52,10 @@
   background: var(--positive);
 }
 
+.topbar-spacer {
+  flex: 1;
+}
+
 /* ── Body (sidebar + main) ──────────────────────────── */
 .app-body {
   display: flex;

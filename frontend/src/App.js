@@ -3,6 +3,7 @@ import { InteractionStatus } from '@azure/msal-browser';
 import MarketDataTable from './components/MarketDataTable';
 import { loginRequest } from './auth/msalConfig';
 import './styles/layout.css';
+import './styles/global.css';
 
 const NAV_ITEMS = [
   { icon: '▦', label: 'Market Data',  active: true  },
@@ -21,10 +22,16 @@ function App() {
 
   if (!isAuthenticated) {
     return (
-      <div className="app-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <button className="btn-primary" onClick={() => instance.loginRedirect(loginRequest)}>
-          Sign in with Microsoft
-        </button>
+      <div className="app-shell">
+        <div className="signin-screen">
+          <span className="signin-logo">Order<span>Manager</span></span>
+          <div className="signin-card">
+            <p>Sign in with your Microsoft account to continue.</p>
+            <button className="btn-primary" onClick={() => instance.loginRedirect(loginRequest)}>
+              Sign in with Microsoft
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -36,6 +43,7 @@ function App() {
         <span className="topbar-logo">Order<span>Manager</span></span>
         <div className="topbar-divider" />
         <span className="topbar-status">Market Open</span>
+        <div className="topbar-spacer" />
         <button className="btn-secondary" onClick={() => instance.logoutRedirect()}>Sign out</button>
       </header>
 
