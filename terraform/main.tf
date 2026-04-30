@@ -66,7 +66,7 @@ resource "azuread_application" "app" {
   single_page_application {
     redirect_uris = [
       "http://localhost:3000/",
-      "https://${var.project_name}-${var.environment}-frontend.azurewebsites.net/",
+      "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}/",
     ]
   }
 }
@@ -144,6 +144,10 @@ resource "azurerm_container_app" "marketdata" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
 
   registry {
     server               = azurerm_container_registry.acr.login_server
@@ -227,6 +231,10 @@ resource "azurerm_container_app" "frontend" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
 
   registry {
     server               = azurerm_container_registry.acr.login_server
