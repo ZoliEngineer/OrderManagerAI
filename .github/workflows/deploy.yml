@@ -10,7 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  # ── Build & Push Docker images ───────────────────────
   build-and-deploy:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -18,6 +17,7 @@ jobs:
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      RG: ordermanagerai-prod-rg
 
     steps:
       - uses: actions/checkout@v4
@@ -37,8 +37,22 @@ jobs:
         run: cd marketdata && mvn clean package -DskipTests -B
 
       - name: Build frontend
+        run: cd frontend && npm ci && npm run build
+
+      # Login to Azure early so we can query the backend FQDN before
+      # building the frontend Docker image (URL is baked in at build time).
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get backend FQDN
         run: |
-          cd frontend && npm ci && npm run build
+          FQDN=$(az containerapp show \
+            --name ordermanagerai-prod-marketdata \
+            --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "BACKEND_FQDN=$FQDN" >> $GITHUB_ENV
 
       # Docker build & push
       - name: Login to ACR
@@ -54,55 +68,47 @@ jobs:
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
+      # REACT_APP_API_URL and REACT_APP_WS_BASE are derived from the live
+      # Container App FQDN fetched above — no hardcoded URLs needed.
       - name: Build and push frontend image
         run: |
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:latest"
           docker build \
-            --build-arg REACT_APP_API_URL="https://ordermanagerai-prod-marketdata.azurewebsites.net" \
-            --build-arg REACT_APP_WS_BASE="wss://ordermanagerai-prod-marketdata.azurewebsites.net" \
+            --build-arg REACT_APP_API_URL="https://${{ env.BACKEND_FQDN }}" \
+            --build-arg REACT_APP_WS_BASE="wss://${{ env.BACKEND_FQDN }}" \
+            --build-arg REACT_APP_AAD_CLIENT_ID="${{ vars.AAD_CLIENT_ID }}" \
+            --build-arg REACT_APP_AAD_TENANT_ID="${{ vars.AAD_TENANT_ID }}" \
+            --build-arg REACT_APP_AAD_SCOPE="${{ vars.AAD_SCOPE }}" \
             -t "$TAG" -t "$TAG_LATEST" frontend/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
-      # Deploy to Azure App Service
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Configure backend app settings
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ordermanagerai-prod-marketdata
-          app-settings-json: |
-            [{"name": "CORS_ALLOWED_ORIGINS", "value": "https://ordermanagerai-prod-frontend.azurewebsites.net"}]
-
+      # az containerapp update replaces the running revision with the new image.
       - name: Deploy backend
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ordermanagerai-prod-marketdata
-          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-marketdata:${{ github.sha }}
-
-      - name: Configure frontend app settings
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ordermanagerai-prod-frontend
-          app-settings-json: |
-            [{"name": "BACKEND_URL", "value": "http://ordermanagerai-prod-marketdata.azurewebsites.net"}]
+        run: |
+          az containerapp update \
+            --name ordermanagerai-prod-marketdata \
+            --resource-group "$RG" \
+            --image "${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:${{ github.sha }}"
+          az containerapp ingress update \
+            --name ordermanagerai-prod-marketdata \
+            --resource-group "$RG" \
+            --target-port 8080
 
       - name: Deploy frontend
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: ordermanagerai-prod-frontend
-          images: ${{ secrets.ACR_LOGIN_SERVER }}/ordermanagerai-frontend:${{ github.sha }}
+        run: |
+          az containerapp update \
+            --name ordermanagerai-prod-frontend \
+            --resource-group "$RG" \
+            --image "${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
 
       - name: Smoke test
         run: |
           echo "Waiting 30s for deployment to stabilize..."
           sleep 30
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            https://ordermanagerai-prod-marketdata.azurewebsites.net/api/hello)
+            "https://${{ env.BACKEND_FQDN }}/actuator/health")
           if [ "$STATUS" -ne 200 ]; then
             echo "❌ Smoke test failed (HTTP $STATUS)"
             exit 1

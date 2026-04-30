@@ -4,14 +4,18 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.100"
     }
+    azuread = {
+      source  = "hashicorp/azuread"
+      version = "~> 2.50"
+    }
   }
 
   # Store state remotely — create this storage account manually first (see instructions below)
   backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstateordermanagerai"
-    container_name       = "tfstate"
-    key                  = "terraform.tfstate"
+    resource_group_name = "tfstate-rg"
+    container_name      = "tfstate"
+    key                 = "terraform.tfstate"
+    # storage_account_name is passed dynamically by bootstrap.sh via -backend-config
   }
 }
 
@@ -19,10 +23,47 @@ provider "azurerm" {
   features {}
 }
 
+provider "azuread" {}
+
 data "azurerm_client_config" "current" {}
 
 locals {
-  prefix = "${var.project_name}-${var.environment}"
+  prefix     = "${var.project_name}-${var.environment}"
+  sub_suffix = substr(replace(data.azurerm_client_config.current.subscription_id, "-", ""), 0, 6)
+}
+
+# ── Entra ID App Registration ────────────────────────────
+resource "azuread_service_principal" "app" {
+  client_id = azuread_application.app.client_id
+}
+
+resource "azuread_application" "app" {
+  display_name     = "OrderManagerAI"
+  sign_in_audience = "AzureADMyOrg"
+
+  # Exposes the backend API and defines the scope the frontend requests
+  api {
+    requested_access_token_version = 2
+
+    oauth2_permission_scope {
+      admin_consent_description  = "Access market data"
+      admin_consent_display_name = "market.read"
+      enabled                    = true
+      id                         = "00000000-0000-0000-0000-000000000001"
+      type                       = "User"
+      user_consent_description   = "Access market data on your behalf"
+      user_consent_display_name  = "market.read"
+      value                      = "market.read"
+    }
+  }
+
+  # SPA platform — Entra ID will issue tokens directly to this origin
+  single_page_application {
+    redirect_uris = [
+      "http://localhost:3000/",
+      "https://${var.project_name}-${var.environment}-frontend.azurewebsites.net/",
+    ]
+  }
 }
 
 # ── Resource Group ──────────────────────────────────────
@@ -52,97 +93,172 @@ resource "azurerm_key_vault_secret" "redis_password" {
   name         = "REDIS-PASSWORD"
   value        = var.redis_password
   key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
 resource "azurerm_key_vault_secret" "kafka_api_key" {
   name         = "KAFKA-CLUSTER-API-KEY"
   value        = var.kafka_cluster_api_key
   key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
 resource "azurerm_key_vault_secret" "kafka_api_secret" {
   name         = "KAFKA-CLUSTER-API-SECRET"
   value        = var.kafka_cluster_api_secret
   key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
 # ── Container Registry ──────────────────────────────────
 resource "azurerm_container_registry" "acr" {
-  name                = "${var.project_name}${var.environment}acr"
+  name                = "${var.project_name}${var.environment}acr${local.sub_suffix}"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   sku                 = "Basic"
   admin_enabled       = true
 }
 
-# ── App Service Plan (Linux, B1 tier) ───────────────────
-resource "azurerm_service_plan" "main" {
-  name                = "${local.prefix}-plan"
+# ── Container App Environment ────────────────────────────
+# Shared networking/logging layer for both container apps.
+# Consumption plan = pay-per-use, well within the free tier for low traffic.
+resource "azurerm_container_app_environment" "main" {
+  name                = "${local.prefix}-env"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  os_type             = "Linux"
-  sku_name            = "B1"
 }
 
-# ── Market Data App Service ──────────────────────────────
-resource "azurerm_linux_web_app" "marketdata" {
-  name                = "${local.prefix}-marketdata"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  service_plan_id     = azurerm_service_plan.main.id
+# ── Market Data Container App ────────────────────────────
+# Secrets are stored directly in the Container App rather than fetched from
+# Key Vault at runtime — this avoids the managed-identity/access-policy
+# ordering problem. Key Vault still holds the canonical copies for auditing.
+# CORS origin uses the environment's default_domain to predict the frontend
+# FQDN without creating a circular resource dependency.
+resource "azurerm_container_app" "marketdata" {
+  name                         = "${local.prefix}-marketdata"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
 
-  identity {
-    type = "SystemAssigned"
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
   }
 
-  site_config {
-    websockets_enabled = true
-    application_stack {
-      docker_registry_url      = "https://${azurerm_container_registry.acr.login_server}"
-      docker_registry_username = azurerm_container_registry.acr.admin_username
-      docker_registry_password = azurerm_container_registry.acr.admin_password
-      docker_image_name        = "ordermanagerai-marketdata:latest"
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
+  }
+  secret {
+    name  = "redis-password"
+    value = var.redis_password
+  }
+  secret {
+    name  = "kafka-api-key"
+    value = var.kafka_cluster_api_key
+  }
+  secret {
+    name  = "kafka-api-secret"
+    value = var.kafka_cluster_api_secret
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 1
+
+    container {
+      name   = "marketdata"
+      # Placeholder lets Terraform create the app without images in ACR.
+      # The deploy workflow overwrites this on the first push to main.
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "REDIS_PASSWORD"
+        secret_name = "redis-password"
+      }
+      env {
+        name        = "KAFKA_CLUSTER_API_KEY"
+        secret_name = "kafka-api-key"
+      }
+      env {
+        name        = "KAFKA_CLUSTER_API_SECRET"
+        secret_name = "kafka-api-secret"
+      }
+      env {
+        name  = "AAD_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
+      }
+      env {
+        name  = "AAD_CLIENT_ID"
+        value = azuread_application.app.client_id
+      }
+      env {
+        name  = "CORS_ALLOWED_ORIGINS"
+        value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
+      }
     }
   }
 
-  app_settings = {
-    WEBSITES_PORT                   = "8080"
-    DOCKER_REGISTRY_SERVER_PASSWORD = azurerm_container_registry.acr.admin_password
-    CORS_ALLOWED_ORIGINS            = "https://${local.prefix}-frontend.azurewebsites.net"
-    REDIS_PASSWORD                  = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.main.name};SecretName=${azurerm_key_vault_secret.redis_password.name})"
-    KAFKA_CLUSTER_API_KEY           = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.main.name};SecretName=${azurerm_key_vault_secret.kafka_api_key.name})"
-    KAFKA_CLUSTER_API_SECRET        = "@Microsoft.KeyVault(VaultName=${azurerm_key_vault.main.name};SecretName=${azurerm_key_vault_secret.kafka_api_secret.name})"
+  ingress {
+    external_enabled = true
+    target_port      = 80  # placeholder serves on 80; deploy workflow sets real port via image update
+    transport        = "http"
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
   }
 }
 
-resource "azurerm_key_vault_access_policy" "marketdata" {
-  key_vault_id = azurerm_key_vault.main.id
-  tenant_id    = data.azurerm_client_config.current.tenant_id
-  object_id    = azurerm_linux_web_app.marketdata.identity[0].principal_id
+# ── Frontend Container App ───────────────────────────────
+# Serves the nginx+React image. AAD config is baked into the image at build
+# time via Docker build-args, so only BACKEND_URL is needed at runtime
+# (nginx uses it for proxying if configured).
+resource "azurerm_container_app" "frontend" {
+  name                         = "${local.prefix}-frontend"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
 
-  secret_permissions = ["Get", "List"]
-}
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
+  }
 
-# ── Frontend App Service ────────────────────────────────
-resource "azurerm_linux_web_app" "frontend" {
-  name                = "${local.prefix}-frontend"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  service_plan_id     = azurerm_service_plan.main.id
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
+  }
 
-  site_config {
-    websockets_enabled = true
-    application_stack {
-      docker_registry_url      = "https://${azurerm_container_registry.acr.login_server}"
-      docker_registry_username = azurerm_container_registry.acr.admin_username
-      docker_registry_password = azurerm_container_registry.acr.admin_password
-      docker_image_name        = "ordermanagerai-frontend:latest"
+  template {
+    min_replicas = 0
+    max_replicas = 1
+
+    container {
+      name   = "frontend"
+      # Placeholder — replaced by deploy workflow on first push to main.
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "BACKEND_URL"
+        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}"
+      }
     }
   }
 
-  app_settings = {
-    BACKEND_URL                    = "http://${azurerm_linux_web_app.marketdata.default_hostname}"
-    WEBSITES_PORT                  = "80"
-    DOCKER_REGISTRY_SERVER_PASSWORD = azurerm_container_registry.acr.admin_password
+  ingress {
+    external_enabled = true
+    target_port      = 80
+    transport        = "http"
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
   }
 }

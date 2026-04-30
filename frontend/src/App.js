@@ -1,4 +1,7 @@
+import { useIsAuthenticated, useMsal } from '@azure/msal-react';
+import { InteractionStatus } from '@azure/msal-browser';
 import MarketDataTable from './components/MarketDataTable';
+import { loginRequest } from './auth/msalConfig';
 import './styles/layout.css';
 
 const NAV_ITEMS = [
@@ -9,6 +12,23 @@ const NAV_ITEMS = [
 ];
 
 function App() {
+  const isAuthenticated = useIsAuthenticated();
+  const { instance, inProgress } = useMsal();
+
+  if (inProgress !== InteractionStatus.None) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="app-shell" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <button className="btn-primary" onClick={() => instance.loginRedirect(loginRequest)}>
+          Sign in with Microsoft
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
 
@@ -16,6 +36,7 @@ function App() {
         <span className="topbar-logo">Order<span>Manager</span></span>
         <div className="topbar-divider" />
         <span className="topbar-status">Market Open</span>
+        <button className="btn-secondary" onClick={() => instance.logoutRedirect()}>Sign out</button>
       </header>
 
       <div className="app-body">
