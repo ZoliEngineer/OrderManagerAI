@@ -37,6 +37,11 @@ resource "azuread_service_principal" "app" {
   client_id = azuread_application.app.client_id
 }
 
+resource "azuread_application_identifier_uri" "app" {
+  application_id = azuread_application.app.id
+  identifier_uri = "api://${azuread_application.app.client_id}"
+}
+
 resource "azuread_application" "app" {
   display_name     = "OrderManagerAI"
   sign_in_audience = "AzureADMyOrg"
