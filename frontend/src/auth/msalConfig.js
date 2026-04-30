@@ -1,5 +1,9 @@
 import { PublicClientApplication, LogLevel } from "@azure/msal-browser";
 
+if (!process.env.REACT_APP_AAD_CLIENT_ID) throw new Error('REACT_APP_AAD_CLIENT_ID is not set');
+if (!process.env.REACT_APP_AAD_TENANT_ID) throw new Error('REACT_APP_AAD_TENANT_ID is not set');
+if (!process.env.REACT_APP_AAD_SCOPE) throw new Error('REACT_APP_AAD_SCOPE is not set');
+
 export const msalConfig = {
   auth: {
     clientId: process.env.REACT_APP_AAD_CLIENT_ID,
@@ -18,9 +22,11 @@ export const msalConfig = {
   },
 };
 
-// Used only for sign-in — MSAL adds openid/profile/offline_access automatically
+// Used only for sign-in — MSAL adds openid/profile/offline_access automatically.
+// The API scope is included so the resulting cache entry correlates with apiTokenRequest,
+// meaning acquireTokenSilent can satisfy both from the same cached token.
 export const loginRequest = {
-  scopes: [],
+  scopes: [process.env.REACT_APP_AAD_SCOPE],
 };
 
 // Used when acquiring tokens for API calls

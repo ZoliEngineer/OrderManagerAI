@@ -2,7 +2,7 @@ import { msalInstance, apiTokenRequest } from '../auth/msalConfig';
 
 const BASE_URL = process.env.REACT_APP_API_URL ?? '';
 
-async function getToken() {
+export async function getToken() {
   const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
   const result = await msalInstance.acquireTokenSilent({ ...apiTokenRequest, account });
   return result.accessToken;
