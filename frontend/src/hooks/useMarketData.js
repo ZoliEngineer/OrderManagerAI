@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { msalInstance, apiTokenRequest } from '../auth/msalConfig';
 import { getMarketData } from '../api/marketDataApi';
 import { connectMarketDataStream } from '../api/marketDataWebSocket';
 
@@ -15,12 +16,16 @@ function useMarketData() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Live updates — each message carries a single stock update
+  // Live updates — acquire token first, then open WebSocket with it as a query param
   useEffect(() => {
-    return connectMarketDataStream(
-      (stock) => setStockMap(prev => ({ ...prev, [stock.ticker]: stock })),
-      (err) => setError(err)
-    );
+    const account = msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0];
+    msalInstance.acquireTokenSilent({ ...apiTokenRequest, account })
+      .then(result => connectMarketDataStream(
+        (stock) => setStockMap(prev => ({ ...prev, [stock.ticker]: stock })),
+        (err) => setError(err),
+        result.accessToken
+      ))
+      .catch(() => setError('Authentication error — unable to connect to live prices'));
   }, []);
 
   const stocks = Object.values(stockMap).sort((a, b) => a.ticker.localeCompare(b.ticker));
