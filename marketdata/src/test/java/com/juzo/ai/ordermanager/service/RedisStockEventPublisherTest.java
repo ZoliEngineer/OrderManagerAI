@@ -34,7 +34,8 @@ class RedisStockEventPublisherTest {
 
     @Test
     void publishSendsToCorrectChannel() {
-        Stock stock = new Stock("AAPL", "Apple Inc.", new BigDecimal("189.30"), BigDecimal.ZERO);
+        BigDecimal z = BigDecimal.ZERO;
+        Stock stock = new Stock("AAPL", "Apple Inc.", new BigDecimal("189.30"), z, z, z, z, z, z, z);
         when(redisTemplate.convertAndSend(eq(CHANNEL), any())).thenReturn(Mono.just(1L));
 
         publisher.publish(stock);
@@ -44,7 +45,8 @@ class RedisStockEventPublisherTest {
 
     @Test
     void publishSerializesStockAsJson() {
-        Stock stock = new Stock("NVDA", "NVIDIA Corp.", new BigDecimal("875.40"), BigDecimal.ZERO);
+        BigDecimal z = BigDecimal.ZERO;
+        Stock stock = new Stock("NVDA", "NVIDIA Corp.", new BigDecimal("875.40"), z, z, z, z, z, z, z);
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         when(redisTemplate.convertAndSend(eq(CHANNEL), payloadCaptor.capture())).thenReturn(Mono.just(1L));
 
@@ -57,7 +59,8 @@ class RedisStockEventPublisherTest {
 
     @Test
     void publishDoesNotThrowOnRedisError() {
-        Stock stock = new Stock("TSLA", "Tesla Inc.", new BigDecimal("177.80"), BigDecimal.ZERO);
+        BigDecimal z = BigDecimal.ZERO;
+        Stock stock = new Stock("TSLA", "Tesla Inc.", new BigDecimal("177.80"), z, z, z, z, z, z, z);
         when(redisTemplate.convertAndSend(any(), any())).thenReturn(Mono.error(new RuntimeException("connection refused")));
 
         publisher.publish(stock);
@@ -67,7 +70,8 @@ class RedisStockEventPublisherTest {
 
     @Test
     void publishSerializesAllStockFields() {
-        Stock stock = new Stock("MSFT", "Microsoft Corp.", new BigDecimal("415.50"), new BigDecimal("2.75"));
+        BigDecimal z = BigDecimal.ZERO;
+        Stock stock = new Stock("MSFT", "Microsoft Corp.", new BigDecimal("415.50"), z, z, z, z, z, z, new BigDecimal("2.75"));
         ArgumentCaptor<String> payloadCaptor = ArgumentCaptor.forClass(String.class);
         when(redisTemplate.convertAndSend(eq(CHANNEL), payloadCaptor.capture())).thenReturn(Mono.just(1L));
 
@@ -77,6 +81,6 @@ class RedisStockEventPublisherTest {
         assertThat(json).contains("\"ticker\":\"MSFT\"");
         assertThat(json).contains("\"name\":\"Microsoft Corp.\"");
         assertThat(json).contains("\"price\":415.50");
-        assertThat(json).contains("\"change\":2.75");
+        assertThat(json).contains("\"lastChange\":2.75");
     }
 }

@@ -41,25 +41,48 @@ function MarketDataTable() {
           <th>Ticker</th>
           <th>Name</th>
           <th className="align-right">Price (USD)</th>
+          <th className="align-right">Day Change</th>
         </tr>
       </thead>
       <tbody>
-        {stocks.map((stock) => (
-          <tr key={stock.ticker} className={flashMap[stock.ticker] || ''}>
-            <td><span className="ticker-badge">{stock.ticker}</span></td>
-            <td>{stock.name}</td>
-            <td className="align-right">
-              <span className={`price-value ${stock.change > 0 ? 'price-up' : stock.change < 0 ? 'price-down' : ''}`}>
-                ${Number(stock.price).toFixed(2)}
-              </span>
-              {stock.change !== null && (
-                <span className={`price-change ${stock.change > 0 ? 'price-up' : stock.change < 0 ? 'price-down' : 'price-flat'}`}>
-                  {stock.change > 0 ? '+' : ''}{Number(stock.change).toFixed(2)}
+        {stocks.map((stock) => {
+          const totalChange = Number(stock.totalChange);
+          const lastChange  = Number(stock.lastChange);
+          const dayDir = totalChange > 0 ? 'price-up' : totalChange < 0 ? 'price-down' : '';
+          const tickDir = lastChange  > 0 ? 'price-up' : lastChange  < 0 ? 'price-down' : 'price-flat';
+          const sign = v => v > 0 ? '+' : '';
+
+          return (
+            <tr key={stock.ticker} className={flashMap[stock.ticker] || ''}>
+              <td><span className="ticker-badge">{stock.ticker}</span></td>
+              <td>{stock.name}</td>
+              <td className="align-right">
+                <span className="price-value">
+                  ${Number(stock.price).toFixed(2)}
                 </span>
-              )}
-            </td>
-          </tr>
-        ))}
+                {stock.lastChange != null && (
+                  <span className={`price-tick ${tickDir}`}>
+                    {lastChange > 0 ? '▲' : lastChange < 0 ? '▼' : ''}{sign(lastChange)}{lastChange.toFixed(2)}
+                  </span>
+                )}
+              </td>
+              <td className="align-right">
+                {stock.changePercent != null && (
+                  <>
+                    <span className={`day-change ${dayDir}`}>
+                      {sign(Number(stock.changePercent))}{Number(stock.changePercent).toFixed(2)}%
+                    </span>
+                    {stock.totalChange != null && (
+                      <span className={`day-change-pct ${dayDir}`}>
+                        {sign(totalChange)}{totalChange.toFixed(2)}
+                      </span>
+                    )}
+                  </>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

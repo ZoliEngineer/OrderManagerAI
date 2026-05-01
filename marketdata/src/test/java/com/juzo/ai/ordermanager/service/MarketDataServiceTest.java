@@ -17,17 +17,18 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class MarketDataServiceTest {
 
+    private static final BigDecimal Z = BigDecimal.ZERO;
     private static final List<Stock> INITIAL_STOCKS = List.of(
-        new Stock("AAPL",  "Apple Inc.",            new BigDecimal("189.30"), BigDecimal.ZERO),
-        new Stock("MSFT",  "Microsoft Corp.",       new BigDecimal("415.50"), BigDecimal.ZERO),
-        new Stock("NVDA",  "NVIDIA Corp.",          new BigDecimal("875.40"), BigDecimal.ZERO),
-        new Stock("AMZN",  "Amazon.com Inc.",       new BigDecimal("182.75"), BigDecimal.ZERO),
-        new Stock("GOOGL", "Alphabet Inc.",         new BigDecimal("175.20"), BigDecimal.ZERO),
-        new Stock("META",  "Meta Platforms Inc.",   new BigDecimal("505.60"), BigDecimal.ZERO),
-        new Stock("BRK.B", "Berkshire Hathaway B", new BigDecimal("395.10"), BigDecimal.ZERO),
-        new Stock("LLY",   "Eli Lilly and Co.",    new BigDecimal("780.90"), BigDecimal.ZERO),
-        new Stock("JPM",   "JPMorgan Chase & Co.", new BigDecimal("198.45"), BigDecimal.ZERO),
-        new Stock("TSLA",  "Tesla Inc.",            new BigDecimal("177.80"), BigDecimal.ZERO)
+        new Stock("AAPL",  "Apple Inc.",            new BigDecimal("189.30"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("MSFT",  "Microsoft Corp.",       new BigDecimal("415.50"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("NVDA",  "NVIDIA Corp.",          new BigDecimal("875.40"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("AMZN",  "Amazon.com Inc.",       new BigDecimal("182.75"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("GOOGL", "Alphabet Inc.",         new BigDecimal("175.20"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("META",  "Meta Platforms Inc.",   new BigDecimal("505.60"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("BRK.B", "Berkshire Hathaway B", new BigDecimal("395.10"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("LLY",   "Eli Lilly and Co.",    new BigDecimal("780.90"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("JPM",   "JPMorgan Chase & Co.", new BigDecimal("198.45"), Z, Z, Z, Z, Z, Z, Z),
+        new Stock("TSLA",  "Tesla Inc.",            new BigDecimal("177.80"), Z, Z, Z, Z, Z, Z, Z)
     );
 
     @Mock

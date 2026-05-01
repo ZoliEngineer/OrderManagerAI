@@ -35,7 +35,7 @@ class KafkaStockEventPublisherTest {
 
     @Test
     void publishSendsToCorrectTopic() {
-        Stock stock = new Stock("AAPL", "Apple Inc.", new BigDecimal("189.30"), BigDecimal.ZERO);
+        Stock stock = stock("AAPL", "Apple Inc.", "189.30");
         when(kafkaTemplate.send(any(), any(), any())).thenReturn(new CompletableFuture<>());
 
         publisher.publish(stock);
@@ -45,7 +45,7 @@ class KafkaStockEventPublisherTest {
 
     @Test
     void publishUsesTickerAsKey() {
-        Stock stock = new Stock("MSFT", "Microsoft Corp.", new BigDecimal("415.50"), BigDecimal.ZERO);
+        Stock stock = stock("MSFT", "Microsoft Corp.", "415.50");
         ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
         when(kafkaTemplate.send(any(), keyCaptor.capture(), any())).thenReturn(new CompletableFuture<>());
 
@@ -56,7 +56,7 @@ class KafkaStockEventPublisherTest {
 
     @Test
     void publishSerializesStockAsJson() {
-        Stock stock = new Stock("NVDA", "NVIDIA Corp.", new BigDecimal("875.40"), BigDecimal.ZERO);
+        Stock stock = stock("NVDA", "NVIDIA Corp.", "875.40");
         ArgumentCaptor<String> valueCaptor = ArgumentCaptor.forClass(String.class);
         when(kafkaTemplate.send(any(), any(), valueCaptor.capture())).thenReturn(new CompletableFuture<>());
 
@@ -69,7 +69,7 @@ class KafkaStockEventPublisherTest {
 
     @Test
     void publishLogsErrorOnKafkaFailure() {
-        Stock stock = new Stock("TSLA", "Tesla Inc.", new BigDecimal("177.80"), BigDecimal.ZERO);
+        Stock stock = stock("TSLA", "Tesla Inc.", "177.80");
         CompletableFuture<SendResult<String, String>> future = new CompletableFuture<>();
         when(kafkaTemplate.send(any(), any(), any())).thenReturn(future);
 
@@ -82,7 +82,7 @@ class KafkaStockEventPublisherTest {
 
     @Test
     void publishDoesNotThrowWhenKafkaSucceeds() {
-        Stock stock = new Stock("AMZN", "Amazon.com Inc.", new BigDecimal("182.75"), BigDecimal.ZERO);
+        Stock stock = stock("AMZN", "Amazon.com Inc.", "182.75");
         CompletableFuture<SendResult<String, String>> future = new CompletableFuture<>();
         when(kafkaTemplate.send(any(), any(), any())).thenReturn(future);
 
@@ -90,5 +90,10 @@ class KafkaStockEventPublisherTest {
         future.completeExceptionally(new RuntimeException("intentional"));
 
         verify(kafkaTemplate).send(eq(TOPIC), eq("AMZN"), any());
+    }
+
+    private static Stock stock(String ticker, String name, String price) {
+        BigDecimal z = BigDecimal.ZERO;
+        return new Stock(ticker, name, new BigDecimal(price), z, z, z, z, z, z, z);
     }
 }
