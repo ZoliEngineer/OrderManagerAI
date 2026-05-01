@@ -23,17 +23,18 @@ public class RandomPriceSimulator implements PriceUpdateSource {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public RandomPriceSimulator() {
+        BigDecimal z = BigDecimal.ZERO;
         List.of(
-            new Stock("AAPL",  "Apple Inc.",            new BigDecimal("189.30"), BigDecimal.ZERO),
-            new Stock("MSFT",  "Microsoft Corp.",       new BigDecimal("415.50"), BigDecimal.ZERO),
-            new Stock("NVDA",  "NVIDIA Corp.",          new BigDecimal("875.40"), BigDecimal.ZERO),
-            new Stock("AMZN",  "Amazon.com Inc.",       new BigDecimal("182.75"), BigDecimal.ZERO),
-            new Stock("GOOGL", "Alphabet Inc.",         new BigDecimal("175.20"), BigDecimal.ZERO),
-            new Stock("META",  "Meta Platforms Inc.",   new BigDecimal("505.60"), BigDecimal.ZERO),
-            new Stock("BRK.B", "Berkshire Hathaway B", new BigDecimal("395.10"), BigDecimal.ZERO),
-            new Stock("LLY",   "Eli Lilly and Co.",    new BigDecimal("780.90"), BigDecimal.ZERO),
-            new Stock("JPM",   "JPMorgan Chase & Co.", new BigDecimal("198.45"), BigDecimal.ZERO),
-            new Stock("TSLA",  "Tesla Inc.",            new BigDecimal("177.80"), BigDecimal.ZERO)
+            new Stock("AAPL",  "Apple Inc.",            new BigDecimal("189.30"), z, z, z, z, z, z, z),
+            new Stock("MSFT",  "Microsoft Corp.",       new BigDecimal("415.50"), z, z, z, z, z, z, z),
+            new Stock("NVDA",  "NVIDIA Corp.",          new BigDecimal("875.40"), z, z, z, z, z, z, z),
+            new Stock("AMZN",  "Amazon.com Inc.",       new BigDecimal("182.75"), z, z, z, z, z, z, z),
+            new Stock("GOOGL", "Alphabet Inc.",         new BigDecimal("175.20"), z, z, z, z, z, z, z),
+            new Stock("META",  "Meta Platforms Inc.",   new BigDecimal("505.60"), z, z, z, z, z, z, z),
+            new Stock("BRK.B", "Berkshire Hathaway B", new BigDecimal("395.10"), z, z, z, z, z, z, z),
+            new Stock("LLY",   "Eli Lilly and Co.",    new BigDecimal("780.90"), z, z, z, z, z, z, z),
+            new Stock("JPM",   "JPMorgan Chase & Co.", new BigDecimal("198.45"), z, z, z, z, z, z, z),
+            new Stock("TSLA",  "Tesla Inc.",            new BigDecimal("177.80"), z, z, z, z, z, z, z)
         ).forEach(s -> stocks.put(s.ticker(), s));
     }
 
@@ -68,7 +69,9 @@ public class RandomPriceSimulator implements PriceUpdateSource {
                     BigDecimal newPrice = oldPrice.add(signedDelta)
                             .max(BigDecimal.ZERO)
                             .setScale(2, RoundingMode.HALF_UP);
-                    return new Stock(stock.ticker(), stock.name(), newPrice, signedDelta);
+                    return new Stock(stock.ticker(), stock.name(), newPrice,
+                            stock.openPrice(), stock.highPrice(), stock.lowPrice(), stock.prevClose(),
+                            stock.totalChange(), stock.changePercent(), signedDelta);
                 });
 
                 if (updated != null) {
