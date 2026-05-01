@@ -1,9 +1,19 @@
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { InteractionStatus } from '@azure/msal-browser';
 import MarketDataTable from './components/MarketDataTable';
+import useMarketStatus from './hooks/useMarketStatus';
 import { loginRequest } from './auth/msalConfig';
 import './styles/layout.css';
 import './styles/global.css';
+
+function marketStatusLabel(status, loading) {
+  if (loading || !status) return 'Market …';
+  if (status.isOpen) return 'Market Open';
+  if (status.session === 'pre-market') return 'Pre-Market';
+  if (status.session === 'post-market') return 'After Hours';
+  if (status.holiday) return `Closed — ${status.holiday}`;
+  return 'Market Closed';
+}
 
 const NAV_ITEMS = [
   { icon: '▦', label: 'Market Data',  active: true  },
@@ -11,6 +21,11 @@ const NAV_ITEMS = [
   { icon: '⇅', label: 'Orders',       active: false },
   { icon: '⊕', label: 'Buy / Sell',   active: false },
 ];
+
+function MarketStatusLabel() {
+  const { status, loading } = useMarketStatus();
+  return <span className="topbar-status">{marketStatusLabel(status, loading)}</span>;
+}
 
 function App() {
   const isAuthenticated = useIsAuthenticated();
@@ -42,7 +57,7 @@ function App() {
       <header className="topbar">
         <span className="topbar-logo">Order<span>Manager</span></span>
         <div className="topbar-divider" />
-        <span className="topbar-status">Market Open</span>
+        <MarketStatusLabel />
         <div className="topbar-spacer" />
         <button className="btn-secondary" onClick={() => instance.logoutRedirect()}>Sign out</button>
       </header>

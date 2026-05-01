@@ -26,6 +26,11 @@ jest.mock('@azure/msal-react', () => ({
 }));
 
 jest.mock('./hooks/useMarketData', () => () => ({ stocks: [], loading: false, error: null }));
+jest.mock('./hooks/useMarketStatus', () => () => ({
+  status: { isOpen: true, session: 'regular', holiday: null },
+  loading: false,
+  error: null,
+}));
 
 import App from './App';
 
