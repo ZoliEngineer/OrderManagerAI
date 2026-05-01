@@ -6,6 +6,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -90,7 +91,7 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     Mono<Void> fetchInitialPrices() {
         return Flux.fromIterable(stocks.keySet())
             .flatMap(ticker -> webClient.get()
-                .uri("/quote?symbol={symbol}&token={token}", ticker, apiKey)
+                .uri("/quote?symbol={symbol}", ticker)
                 .retrieve()
                 .bodyToMono(String.class)
                 .mapNotNull(json -> {
@@ -130,13 +131,14 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     }
 
     private void connect() {
+        // Finnhub WebSocket API requires the token as a query parameter; header auth is not supported.
+        // Do not log this URI — it contains the API key.
         URI uri = URI.create(wsUrl + "?token=" + apiKey);
 
         connection = wsClient.execute(uri, session -> {
             Mono<Void> sendSubscriptions = session.send(
                 Flux.fromIterable(stocks.keySet())
-                    .map(ticker -> session.textMessage(
-                        "{\"type\":\"subscribe\",\"symbol\":\"" + ticker + "\"}"))
+                    .map(ticker -> session.textMessage(subscribeMessage(ticker)))
             );
 
             Mono<Void> receiveUpdates = session.receive()
@@ -177,6 +179,14 @@ public class FinnhubPriceSource implements PriceUpdateSource {
         });
         if (updated != null) {
             onUpdate.accept(updated);
+        }
+    }
+
+    private static String subscribeMessage(String ticker) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(Map.of("type", "subscribe", "symbol", ticker));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize subscribe message for " + ticker, e);
         }
     }
 

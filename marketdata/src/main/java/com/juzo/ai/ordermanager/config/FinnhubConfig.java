@@ -12,8 +12,13 @@ import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClien
 public class FinnhubConfig {
 
     @Bean
-    WebClient finnhubRestClient(@Value("${finnhub.rest-base-url}") String baseUrl) {
-        return WebClient.builder().baseUrl(baseUrl).build();
+    WebClient finnhubRestClient(
+            @Value("${finnhub.rest-base-url}") String baseUrl,
+            @Value("${finnhub.api-key}") String apiKey) {
+        return WebClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader("X-Finnhub-Token", apiKey)
+                .build();
     }
 
     @Bean
