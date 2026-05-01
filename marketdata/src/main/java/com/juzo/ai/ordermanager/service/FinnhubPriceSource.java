@@ -53,7 +53,7 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     private final ReactorNettyWebSocketClient wsClient;
     private final ConcurrentHashMap<String, Stock> stocks = new ConcurrentHashMap<>();
 
-    private Consumer<Stock> onUpdate;
+    private volatile Consumer<Stock> onUpdate;
     private Disposable connection;
 
     public FinnhubPriceSource(
@@ -91,7 +91,7 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     Mono<Void> fetchInitialPrices() {
         return Flux.fromIterable(stocks.keySet())
             .flatMap(ticker -> webClient.get()
-                .uri("/quote?symbol={symbol}", ticker)
+                .uri("/quote?symbol={symbol}&token={token}", ticker, apiKey)
                 .retrieve()
                 .bodyToMono(String.class)
                 .mapNotNull(json -> {
@@ -135,20 +135,17 @@ public class FinnhubPriceSource implements PriceUpdateSource {
         // Do not log this URI — it contains the API key.
         URI uri = URI.create(wsUrl + "?token=" + apiKey);
 
-        connection = wsClient.execute(uri, session -> {
-            Mono<Void> sendSubscriptions = session.send(
+        connection = wsClient.execute(uri, session ->
+            session.send(
                 Flux.fromIterable(stocks.keySet())
                     .map(ticker -> session.textMessage(subscribeMessage(ticker)))
-            );
-
-            Mono<Void> receiveUpdates = session.receive()
+            )
+            .thenMany(session.receive()
                 .map(WebSocketMessage::getPayloadAsText)
-                .doOnNext(this::handleMessage)
-                .then();
-
-            return Mono.when(sendSubscriptions, receiveUpdates);
-        })
-        .doOnError(e -> log.error("Finnhub WebSocket error: {}", e.getMessage()))
+                .doOnNext(this::handleMessage))
+            .then()
+        )
+        .doOnError(e -> log.error("Finnhub WebSocket error: {}", sanitizeMessage(e.getMessage())))
         .retryWhen(Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(5))
             .maxBackoff(Duration.ofSeconds(60))
             .doBeforeRetry(sig -> log.warn("Reconnecting to Finnhub (attempt {})", sig.totalRetries() + 1)))
@@ -180,6 +177,11 @@ public class FinnhubPriceSource implements PriceUpdateSource {
         if (updated != null) {
             onUpdate.accept(updated);
         }
+    }
+
+    private static String sanitizeMessage(String message) {
+        if (message == null) return null;
+        return message.replaceAll("token=[^&\\s]+", "token=***");
     }
 
     private static String subscribeMessage(String ticker) {
