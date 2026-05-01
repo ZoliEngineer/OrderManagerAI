@@ -6,7 +6,13 @@ public record Stock(
         String ticker,
         String name,
         BigDecimal price,
-        BigDecimal change
+        BigDecimal openPrice,
+        BigDecimal highPrice,
+        BigDecimal lowPrice,
+        BigDecimal prevClose,
+        BigDecimal totalChange,
+        BigDecimal changePercent,
+        BigDecimal lastChange
 ) {
 
 }

@@ -31,8 +31,9 @@ class MarketDataControllerTest {
     @Test
     void returnsOkWithStocksWhenDataAvailable() {
         MarketDataController controller = new MarketDataController(marketDataService, Optional.empty());
+        BigDecimal z = BigDecimal.ZERO;
         List<Stock> stocks = List.of(
-            new Stock("AAPL", "Apple Inc.", new BigDecimal("189.30"), BigDecimal.ZERO)
+            new Stock("AAPL", "Apple Inc.", new BigDecimal("189.30"), z, z, z, z, z, z, z)
         );
         when(marketDataService.getStocks()).thenReturn(stocks);
 

@@ -104,21 +104,8 @@ infra/
 │   ├── security/         ← Key Vault, Managed Identities
 │   └── apim/             ← API Management
 └── environments/
-    ├── dev/
+    ├── local/
     └── prod/
-Azure Event Hubs with Kafka-compatible API is a great choice here — you write standard Kafka client code, but it's fully managed Azure. Great talking point: "I used Event Hubs' Kafka surface so we can swap to Confluent or self-hosted Kafka without changing application code."
-Azure DevOps Pipelines
-Same pattern as before — CI/CD per service, Helm charts, dev/prod stages, Key Vault integration. Add a Terraform pipeline as a separate pipeline that plans on PR and applies on merge to main.
-AKS Specifics Worth Highlighting
-
-KEDA (Kubernetes Event-Driven Autoscaling) — scales the Execution Service and Position Service based on Kafka consumer lag. This is a genuinely impressive thing to mention and fits perfectly here.
-Horizontal Pod Autoscaler on Market Data and Order Services.
-Pod Disruption Budgets on critical services — shows production-mindedness.
-Azure Key Vault CSI driver — secrets mounted as volumes, not env vars.
-
-
-Additional Technologies That Fit Naturally
-TechnologyWhereJustificationgRPCOrder ↔ Risk, Order ↔ ExecutionLow-latency synchronous internal calls, typed contractsSpring WebFluxMarket Data, PositionNon-blocking, handles high-frequency price eventsCQRS + Event SourcingOrder ServiceOrders are a natural event log; current state derived from eventsResilience4jOrder → Risk, Order → ExecutionCircuit breaker on critical path — can't silently pass riskTestcontainersAll servicesSpin up real Kafka, PostgreSQL, MongoDB in integration testsOpenTelemetryAll servicesDistributed tracing across the order lifecycle — essential at this complexityFlywayPostgreSQL servicesSchema versioning, expected in financial systemsKEDAAKSEvent-driven pod scaling based on Kafka lagRecharts / TradingViewReact UIReal-time price chartingWebSocketMarket Data → UILive price and order status pushAzure Managed IdentityAll AKS podsNo credentials in code, proper Azure auth
 
 Project Structure
 tradeflow/

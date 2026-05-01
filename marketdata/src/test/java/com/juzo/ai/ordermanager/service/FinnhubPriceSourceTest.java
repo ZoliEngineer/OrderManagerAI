@@ -97,7 +97,7 @@ class FinnhubPriceSourceTest {
         Stock result = updates.get(0);
         assertThat(result.ticker()).isEqualTo("AAPL");
         assertThat(result.price()).isEqualByComparingTo("182.50");
-        assertThat(result.change()).isEqualByComparingTo("1.25");
+        assertThat(result.totalChange()).isEqualByComparingTo("1.25");
     }
 
     @Test
@@ -120,7 +120,7 @@ class FinnhubPriceSourceTest {
 
         assertThat(updates).hasSize(1);
         assertThat(updates.get(0).price()).isEqualByComparingTo("415.56");
-        assertThat(updates.get(0).change()).isEqualByComparingTo("0.00");
+        assertThat(updates.get(0).totalChange()).isEqualByComparingTo("0.00");
     }
 
     // ── fetchInitialPrices (HTTP interaction) ────────────────────────────────
@@ -151,7 +151,7 @@ class FinnhubPriceSourceTest {
 
         assertThat(updates).anySatisfy(s -> {
             assertThat(s.price()).isEqualByComparingTo("182.50");
-            assertThat(s.change()).isEqualByComparingTo("1.25");
+            assertThat(s.totalChange()).isEqualByComparingTo("1.25");
         });
     }
 
@@ -194,7 +194,7 @@ class FinnhubPriceSourceTest {
         source.handleMessage(tradeJson("MSFT", 402.50));
 
         assertThat(updates).hasSize(1);
-        assertThat(updates.get(0).change()).isEqualByComparingTo("2.50");
+        assertThat(updates.get(0).lastChange()).isEqualByComparingTo("2.50");
     }
 
     @Test
@@ -204,7 +204,7 @@ class FinnhubPriceSourceTest {
         source.handleMessage(tradeJson("TSLA", 197.75));
 
         assertThat(updates).hasSize(1);
-        assertThat(updates.get(0).change()).isEqualByComparingTo("-2.25");
+        assertThat(updates.get(0).lastChange()).isEqualByComparingTo("-2.25");
     }
 
     @Test

@@ -37,8 +37,13 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     // Finnhub REST /quote field names
-    private static final String FIELD_CURRENT_PRICE = "c";
-    private static final String FIELD_DAY_CHANGE    = "d";
+    private static final String FIELD_CURRENT_PRICE  = "c";
+    private static final String FIELD_DAY_CHANGE     = "d";
+    private static final String FIELD_CHANGE_PERCENT = "dp";
+    private static final String FIELD_HIGH           = "h";
+    private static final String FIELD_LOW            = "l";
+    private static final String FIELD_OPEN           = "o";
+    private static final String FIELD_PREV_CLOSE     = "pc";
 
     // Finnhub WebSocket message field names
     private static final String FIELD_MSG_TYPE   = "type";
@@ -117,17 +122,27 @@ public class FinnhubPriceSource implements PriceUpdateSource {
             log.debug("No current price for {} (market may be closed)", ticker);
             return;
         }
-        BigDecimal price  = BigDecimal.valueOf(rawPrice)
-                                      .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal change = BigDecimal.valueOf(node.path(FIELD_DAY_CHANGE).asDouble())
-                                      .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal price         = bd(rawPrice);
+        BigDecimal openPrice     = bd(node.path(FIELD_OPEN).asDouble());
+        BigDecimal highPrice     = bd(node.path(FIELD_HIGH).asDouble());
+        BigDecimal lowPrice      = bd(node.path(FIELD_LOW).asDouble());
+        BigDecimal prevClose     = bd(node.path(FIELD_PREV_CLOSE).asDouble());
+        BigDecimal totalChange   = bd(node.path(FIELD_DAY_CHANGE).asDouble());
+        BigDecimal changePercent = bd(node.path(FIELD_CHANGE_PERCENT).asDouble());
 
         Stock updated = stocks.compute(ticker, (key, existing) ->
-            existing == null ? null : new Stock(existing.ticker(), existing.name(), price, change)
+            existing == null ? null : new Stock(
+                existing.ticker(), existing.name(),
+                price, openPrice, highPrice, lowPrice, prevClose,
+                totalChange, changePercent, BigDecimal.ZERO)
         );
         if (updated != null) {
             onUpdate.accept(updated);
         }
+    }
+
+    private static BigDecimal bd(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP);
     }
 
     private void connect() {
@@ -168,11 +183,23 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     }
 
     private void processTradeUpdate(String symbol, double rawPrice) {
-        BigDecimal newPrice = BigDecimal.valueOf(rawPrice).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal newPrice = bd(rawPrice);
         Stock updated = stocks.compute(symbol, (key, existing) -> {
             if (existing == null) return null;
-            BigDecimal change = newPrice.subtract(existing.price()).setScale(2, RoundingMode.HALF_UP);
-            return new Stock(existing.ticker(), existing.name(), newPrice, change);
+            BigDecimal lastChange   = newPrice.subtract(existing.price()).setScale(2, RoundingMode.HALF_UP);
+            BigDecimal totalChange  = existing.prevClose().compareTo(BigDecimal.ZERO) != 0
+                ? newPrice.subtract(existing.prevClose()).setScale(2, RoundingMode.HALF_UP)
+                : existing.totalChange();
+            BigDecimal changePercent = existing.prevClose().compareTo(BigDecimal.ZERO) != 0
+                ? newPrice.subtract(existing.prevClose())
+                          .divide(existing.prevClose(), 4, RoundingMode.HALF_UP)
+                          .multiply(BigDecimal.valueOf(100))
+                          .setScale(2, RoundingMode.HALF_UP)
+                : existing.changePercent();
+            return new Stock(
+                existing.ticker(), existing.name(),
+                newPrice, existing.openPrice(), existing.highPrice(), existing.lowPrice(), existing.prevClose(),
+                totalChange, changePercent, lastChange);
         });
         if (updated != null) {
             onUpdate.accept(updated);
@@ -193,17 +220,18 @@ public class FinnhubPriceSource implements PriceUpdateSource {
     }
 
     private static List<Stock> defaultStocks() {
+        BigDecimal z = BigDecimal.ZERO;
         return List.of(
-            new Stock("AAPL",  "Apple Inc.",            BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("MSFT",  "Microsoft Corp.",       BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("NVDA",  "NVIDIA Corp.",          BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("AMZN",  "Amazon.com Inc.",       BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("GOOGL", "Alphabet Inc.",         BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("META",  "Meta Platforms Inc.",   BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("BRK.B", "Berkshire Hathaway B",  BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("LLY",   "Eli Lilly and Co.",     BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("JPM",   "JPMorgan Chase & Co.",  BigDecimal.ZERO, BigDecimal.ZERO),
-            new Stock("TSLA",  "Tesla Inc.",            BigDecimal.ZERO, BigDecimal.ZERO)
+            new Stock("AAPL",  "Apple Inc.",            z, z, z, z, z, z, z, z),
+            new Stock("MSFT",  "Microsoft Corp.",       z, z, z, z, z, z, z, z),
+            new Stock("NVDA",  "NVIDIA Corp.",          z, z, z, z, z, z, z, z),
+            new Stock("AMZN",  "Amazon.com Inc.",       z, z, z, z, z, z, z, z),
+            new Stock("GOOGL", "Alphabet Inc.",         z, z, z, z, z, z, z, z),
+            new Stock("META",  "Meta Platforms Inc.",   z, z, z, z, z, z, z, z),
+            new Stock("BRK.B", "Berkshire Hathaway B",  z, z, z, z, z, z, z, z),
+            new Stock("LLY",   "Eli Lilly and Co.",     z, z, z, z, z, z, z, z),
+            new Stock("JPM",   "JPMorgan Chase & Co.",  z, z, z, z, z, z, z, z),
+            new Stock("TSLA",  "Tesla Inc.",            z, z, z, z, z, z, z, z)
         );
     }
 }

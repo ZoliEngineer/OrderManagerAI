@@ -64,23 +64,43 @@
   font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 500;
+  color: var(--text-primary);
 }
 
-.price-value.price-up   { color: var(--positive, #22c55e); }
-.price-value.price-down { color: var(--negative, #ef4444); }
-
-.price-change {
+.price-tick {
   display: block;
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 400;
-  opacity: 0.65;
+  opacity: 0.6;
   margin-top: 1px;
 }
 
-.price-change.price-up   { color: var(--positive, #22c55e); }
-.price-change.price-down { color: var(--negative, #ef4444); }
-.price-change.price-flat { color: var(--text-muted); }
+.price-tick.price-up   { color: var(--positive, #22c55e); }
+.price-tick.price-down { color: var(--negative, #ef4444); }
+.price-tick.price-flat { color: var(--text-muted); }
+
+.day-change {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.day-change.price-up   { color: var(--positive, #22c55e); }
+.day-change.price-down { color: var(--negative, #ef4444); }
+
+.day-change-pct {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.75;
+  margin-top: 1px;
+}
+
+.day-change-pct.price-up   { color: var(--positive, #22c55e); }
+.day-change-pct.price-down { color: var(--negative, #ef4444); }
 
 .status-loading {
   padding: 24px 18px;
