@@ -22,10 +22,14 @@ const NAV_ITEMS = [
   { icon: '⊕', label: 'Buy / Sell',   active: false },
 ];
 
+function MarketStatusLabel() {
+  const { status, loading } = useMarketStatus();
+  return <span className="topbar-status">{marketStatusLabel(status, loading)}</span>;
+}
+
 function App() {
   const isAuthenticated = useIsAuthenticated();
   const { instance, inProgress } = useMsal();
-  const { status, loading: statusLoading } = useMarketStatus();
 
   if (inProgress !== InteractionStatus.None) {
     return null;
@@ -53,7 +57,7 @@ function App() {
       <header className="topbar">
         <span className="topbar-logo">Order<span>Manager</span></span>
         <div className="topbar-divider" />
-        <span className="topbar-status">{marketStatusLabel(status, statusLoading)}</span>
+        <MarketStatusLabel />
         <div className="topbar-spacer" />
         <button className="btn-secondary" onClick={() => instance.logoutRedirect()}>Sign out</button>
       </header>
