@@ -115,6 +115,14 @@ resource "azurerm_key_vault_secret" "kafka_api_secret" {
   depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
+resource "azurerm_key_vault_secret" "finnhub_api_key" {
+  count        = var.finnhub_api_key != "" ? 1 : 0
+  name         = "FINNHUB-API-KEY"
+  value        = var.finnhub_api_key
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
 # ── Container Registry ──────────────────────────────────
 resource "azurerm_container_registry" "acr" {
   name                = "${var.project_name}${var.environment}acr${local.sub_suffix}"
@@ -171,6 +179,13 @@ resource "azurerm_container_app" "marketdata" {
     name  = "kafka-api-secret"
     value = var.kafka_cluster_api_secret
   }
+  dynamic "secret" {
+    for_each = var.finnhub_api_key != "" ? [var.finnhub_api_key] : []
+    content {
+      name  = "finnhub-api-key"
+      value = secret.value
+    }
+  }
 
   template {
     min_replicas = 0
@@ -207,6 +222,13 @@ resource "azurerm_container_app" "marketdata" {
       env {
         name  = "CORS_ALLOWED_ORIGINS"
         value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
+      }
+      dynamic "env" {
+        for_each = var.finnhub_api_key != "" ? [1] : []
+        content {
+          name        = "FINNHUB_API_KEY"
+          secret_name = "finnhub-api-key"
+        }
       }
     }
   }

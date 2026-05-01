@@ -21,3 +21,8 @@ variable "kafka_cluster_api_key" {
 variable "kafka_cluster_api_secret" {
   sensitive = true
 }
+
+variable "finnhub_api_key" {
+  sensitive = true
+  default   = ""
+}
