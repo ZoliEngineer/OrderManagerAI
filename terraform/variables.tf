@@ -26,3 +26,8 @@ variable "finnhub_api_key" {
   sensitive = true
   default   = ""
 }
+
+variable "neon_db_password" {
+  description = "Password for the Neon PostgreSQL ordermanager_db_user role"
+  sensitive   = true
+}

@@ -23,6 +23,7 @@
 hs_err_pid*
 replay_pid*
 marketdata/target/*
+accountservice/target/*
 frontend/node_modules/*
 frontend/target/*
 frontend/node/*
@@ -33,3 +34,4 @@ frontend/build/*
 # Local secrets
 .env
 terraform.tfvars
+terraform/.terraform/terraform.tfstate

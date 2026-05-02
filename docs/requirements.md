@@ -45,6 +45,7 @@ This is your showcase for reactive programming (Spring WebFlux, Project Reactor)
 2. Account Service
 Tech: Spring Boot, PostgreSQL, Spring Security, OAuth2/JWT, Redis, Azure Entra ID
 Manages trader accounts, cash balances, and buying power. PostgreSQL is the clear choice — financial balances are transactional and relational. Redis caches account buying power for the Risk Service to query with sub-millisecond latency (critical for pre-trade checks). Azure Entra ID as the external identity provider is a natural fit.
+Traders (as financial advisors with multiple clients) have login accounts with Entra ID, and they have access to multiple trade accounts which belong to their multiple clients.
 
 3. Order Service
 Tech: Spring Boot, PostgreSQL, Kafka (producer), gRPC, Resilience4j, Flyway
