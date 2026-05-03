@@ -10,36 +10,70 @@ permissions:
   contents: read
 
 jobs:
-  build-and-deploy:
+  paths-filter:
     if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      marketdata: ${{ steps.filter.outputs.marketdata }}
+      accountservice: ${{ steps.filter.outputs.accountservice }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            marketdata:
+              - 'marketdata/**'
+            accountservice:
+              - 'accountservice/**'
+            frontend:
+              - 'frontend/**'
+            shared:
+              - 'pom.xml'
+              - '.github/workflows/**'
+
+  build-and-deploy:
+    needs: paths-filter
     runs-on: ubuntu-latest
     env:
       ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
       RG: ordermanagerai-prod-rg
+      DEPLOY_MARKETDATA: ${{ needs.paths-filter.outputs.marketdata == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_ACCOUNTSERVICE: ${{ needs.paths-filter.outputs.accountservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_FRONTEND: ${{ needs.paths-filter.outputs.frontend == 'true' || needs.paths-filter.outputs.shared == 'true' }}
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
+        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true'
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
       - uses: actions/setup-node@v4
+        if: env.DEPLOY_FRONTEND == 'true'
         with:
           node-version: '20'
 
       # Build artifacts
       - name: Build backend JAR
+        if: env.DEPLOY_MARKETDATA == 'true'
         run: cd marketdata && mvn clean package -DskipTests -B
 
       - name: Build account service JAR
+        if: env.DEPLOY_ACCOUNTSERVICE == 'true'
         run: cd accountservice && mvn clean package -DskipTests -B
 
       - name: Build frontend
+        if: env.DEPLOY_FRONTEND == 'true'
         run: cd frontend && npm ci && npm run build
 
       # Login to Azure early so we can query the backend FQDN before
@@ -50,6 +84,7 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Get backend FQDN
+        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_FRONTEND == 'true'
         run: |
           FQDN=$(az containerapp show \
             --name ordermanagerai-prod-marketdata \
@@ -64,6 +99,7 @@ jobs:
             -u "$ACR_USERNAME" --password-stdin
 
       - name: Build and push marketdata image
+        if: env.DEPLOY_MARKETDATA == 'true'
         run: |
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:latest"
@@ -72,6 +108,7 @@ jobs:
           docker push "$TAG_LATEST"
 
       - name: Build and push account service image
+        if: env.DEPLOY_ACCOUNTSERVICE == 'true'
         run: |
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:latest"
@@ -82,6 +119,7 @@ jobs:
       # REACT_APP_API_URL and REACT_APP_WS_BASE are derived from the live
       # Container App FQDN fetched above — no hardcoded URLs needed.
       - name: Build and push frontend image
+        if: env.DEPLOY_FRONTEND == 'true'
         run: |
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:latest"
@@ -97,6 +135,7 @@ jobs:
 
       # az containerapp update replaces the running revision with the new image.
       - name: Deploy marketdata service
+        if: env.DEPLOY_MARKETDATA == 'true'
         run: |
           az containerapp update \
             --name ordermanagerai-prod-marketdata \
@@ -108,6 +147,7 @@ jobs:
             --target-port 8080
 
       - name: Deploy frontend
+        if: env.DEPLOY_FRONTEND == 'true'
         run: |
           az containerapp update \
             --name ordermanagerai-prod-frontend \
@@ -115,6 +155,7 @@ jobs:
             --image "${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
 
       - name: Deploy account service
+        if: env.DEPLOY_ACCOUNTSERVICE == 'true'
         run: |
           az containerapp update \
             --name ordermanagerai-prod-acct-svc \
@@ -126,6 +167,7 @@ jobs:
             --target-port 8081
 
       - name: Get account service FQDN
+        if: env.DEPLOY_ACCOUNTSERVICE == 'true'
         run: |
           FQDN=$(az containerapp show \
             --name ordermanagerai-prod-acct-svc \
@@ -134,24 +176,27 @@ jobs:
           echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
 
       - name: Smoke test
+        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true' || env.DEPLOY_FRONTEND == 'true'
         run: |
           echo "Waiting 30s for deployment to stabilize..."
           sleep 30
-          MARKETDATA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://${{ env.BACKEND_FQDN }}/actuator/health")
-          ACCOUNTSERVICE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://$ACCOUNTSERVICE_FQDN/actuator/health")
           FAILED=0
-          if [ "$MARKETDATA_STATUS" -ne 200 ]; then
-            echo "❌ Market data service smoke test failed (HTTP $MARKETDATA_STATUS)"
-            FAILED=1
-          else
-            echo "✅ Market data service smoke test passed"
+          if [ "$DEPLOY_MARKETDATA" = "true" ]; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$BACKEND_FQDN/actuator/health")
+            if [ "$STATUS" -ne 200 ]; then
+              echo "❌ Market data service smoke test failed (HTTP $STATUS)"
+              FAILED=1
+            else
+              echo "✅ Market data service smoke test passed"
+            fi
           fi
-          if [ "$ACCOUNTSERVICE_STATUS" -ne 200 ]; then
-            echo "❌ Account service smoke test failed (HTTP $ACCOUNTSERVICE_STATUS)"
-            FAILED=1
-          else
-            echo "✅ Account service smoke test passed"
+          if [ "$DEPLOY_ACCOUNTSERVICE" = "true" ]; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ACCOUNTSERVICE_FQDN/actuator/health")
+            if [ "$STATUS" -ne 200 ]; then
+              echo "❌ Account service smoke test failed (HTTP $STATUS)"
+              FAILED=1
+            else
+              echo "✅ Account service smoke test passed"
+            fi
           fi
           exit $FAILED
