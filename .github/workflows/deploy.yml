@@ -117,18 +117,18 @@ jobs:
       - name: Deploy account service
         run: |
           az containerapp update \
-            --name ordermanagerai-prod-accountservice \
+            --name ordermanagerai-prod-acct-svc \
             --resource-group "$RG" \
             --image "${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:${{ github.sha }}"
           az containerapp ingress update \
-            --name ordermanagerai-prod-accountservice \
+            --name ordermanagerai-prod-acct-svc \
             --resource-group "$RG" \
             --target-port 8081
 
       - name: Get account service FQDN
         run: |
           FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-accountservice \
+            --name ordermanagerai-prod-acct-svc \
             --resource-group "$RG" \
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
