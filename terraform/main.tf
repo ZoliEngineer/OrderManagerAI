@@ -60,6 +60,15 @@ resource "azuread_application" "app" {
       user_consent_display_name  = "market.read"
       value                      = "market.read"
     }
+
+    oauth2_permission_scope {
+      admin_consent_description  = "Allow internal service-to-service calls"
+      admin_consent_display_name = "internal.read"
+      enabled                    = true
+      id                         = "00000000-0000-0000-0000-000000000002"
+      type                       = "Admin"
+      value                      = "internal.read"
+    }
   }
 
   # SPA platform — Entra ID will issue tokens directly to this origin
@@ -290,6 +299,88 @@ resource "azurerm_container_app" "frontend" {
   ingress {
     external_enabled = true
     target_port      = 80
+    transport        = "http"
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
+
+# ── Neon PostgreSQL (external managed service) ───────────
+resource "azurerm_key_vault_secret" "neon_db_password" {
+  name         = "NEON-DB-PASSWORD"
+  value        = var.neon_db_password
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
+# ── Account Service Container App ────────────────────────
+resource "azurerm_container_app" "account_service" {
+  name                         = "${local.prefix}-acct-svc"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
+  }
+  secret {
+    name  = "redis-password"
+    value = var.redis_password
+  }
+  secret {
+    name  = "neon-db-password"
+    value = var.neon_db_password
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 2
+
+    container {
+      name   = "account-service"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "SPRING_DATASOURCE_PASSWORD"
+        secret_name = "neon-db-password"
+      }
+      env {
+        name        = "REDIS_PASSWORD"
+        secret_name = "redis-password"
+      }
+      env {
+        name  = "AAD_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
+      }
+      env {
+        name  = "AAD_CLIENT_ID"
+        value = azuread_application.app.client_id
+      }
+      env {
+        name  = "CORS_ALLOWED_ORIGINS"
+        value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 8081
     transport        = "http"
     traffic_weight {
       percentage      = 100

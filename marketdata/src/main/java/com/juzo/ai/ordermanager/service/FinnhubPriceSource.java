@@ -95,7 +95,7 @@ public class FinnhubPriceSource implements PriceUpdateSource {
 
     Mono<Void> fetchInitialPrices() {
         return Flux.fromIterable(stocks.keySet())
-            .flatMap(ticker -> webClient.get()
+            .concatMap(ticker -> webClient.get()
                 .uri("/quote?symbol={symbol}&token={token}", ticker, apiKey)
                 .retrieve()
                 .bodyToMono(String.class)

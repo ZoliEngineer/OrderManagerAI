@@ -36,6 +36,9 @@ jobs:
       - name: Build backend JAR
         run: cd marketdata && mvn clean package -DskipTests -B
 
+      - name: Build account service JAR
+        run: cd accountservice && mvn clean package -DskipTests -B
+
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
 
@@ -60,11 +63,19 @@ jobs:
           echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" \
             -u "$ACR_USERNAME" --password-stdin
 
-      - name: Build and push backend image
+      - name: Build and push marketdata image
         run: |
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" marketdata/
+          docker push "$TAG"
+          docker push "$TAG_LATEST"
+
+      - name: Build and push account service image
+        run: |
+          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:${{ github.sha }}"
+          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:latest"
+          docker build -t "$TAG" -t "$TAG_LATEST" accountservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
@@ -85,7 +96,7 @@ jobs:
           docker push "$TAG_LATEST"
 
       # az containerapp update replaces the running revision with the new image.
-      - name: Deploy backend
+      - name: Deploy marketdata service
         run: |
           az containerapp update \
             --name ordermanagerai-prod-marketdata \
@@ -103,14 +114,44 @@ jobs:
             --resource-group "$RG" \
             --image "${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
 
+      - name: Deploy account service
+        run: |
+          az containerapp update \
+            --name ordermanagerai-prod-accountservice \
+            --resource-group "$RG" \
+            --image "${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:${{ github.sha }}"
+          az containerapp ingress update \
+            --name ordermanagerai-prod-accountservice \
+            --resource-group "$RG" \
+            --target-port 8081
+
+      - name: Get account service FQDN
+        run: |
+          FQDN=$(az containerapp show \
+            --name ordermanagerai-prod-accountservice \
+            --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+
       - name: Smoke test
         run: |
           echo "Waiting 30s for deployment to stabilize..."
           sleep 30
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          MARKETDATA_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://${{ env.BACKEND_FQDN }}/actuator/health")
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ Smoke test failed (HTTP $STATUS)"
-            exit 1
+          ACCOUNTSERVICE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://$ACCOUNTSERVICE_FQDN/actuator/health")
+          FAILED=0
+          if [ "$MARKETDATA_STATUS" -ne 200 ]; then
+            echo "❌ Market data service smoke test failed (HTTP $MARKETDATA_STATUS)"
+            FAILED=1
+          else
+            echo "✅ Market data service smoke test passed"
           fi
-          echo "✅ Smoke test passed"
+          if [ "$ACCOUNTSERVICE_STATUS" -ne 200 ]; then
+            echo "❌ Account service smoke test failed (HTTP $ACCOUNTSERVICE_STATUS)"
+            FAILED=1
+          else
+            echo "✅ Account service smoke test passed"
+          fi
+          exit $FAILED

@@ -3,11 +3,11 @@ output "acr_login_server" {
 }
 
 output "marketdata_url" {
-  value = "https://${azurerm_container_app.marketdata.latest_revision_fqdn}"
+  value = "https://${azurerm_container_app.marketdata.ingress[0].fqdn}"
 }
 
 output "frontend_url" {
-  value = "https://${azurerm_container_app.frontend.latest_revision_fqdn}"
+  value = "https://${azurerm_container_app.frontend.ingress[0].fqdn}"
 }
 
 output "key_vault_uri" {
@@ -24,4 +24,8 @@ output "aad_tenant_id" {
 
 output "aad_scope" {
   value = "api://${azuread_application.app.client_id}/market.read"
+}
+
+output "account_service_url" {
+  value = "https://${azurerm_container_app.account_service.ingress[0].fqdn}"
 }
