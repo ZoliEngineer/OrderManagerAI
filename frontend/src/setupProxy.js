@@ -1,8 +1,10 @@
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
-const BACKEND = 'http://localhost:8080';
+const MARKET_DATA  = 'http://localhost:8080';
+const ACCOUNT_SVC  = 'http://localhost:8081';
 
 module.exports = function (app) {
-  app.use('/api', createProxyMiddleware({ target: BACKEND, changeOrigin: true }));
-  app.use('/ws',  createProxyMiddleware({ target: BACKEND, ws: true, changeOrigin: true }));
+  app.use('/api/accounts', createProxyMiddleware({ target: ACCOUNT_SVC, changeOrigin: true }));
+  app.use('/api',          createProxyMiddleware({ target: MARKET_DATA,  changeOrigin: true }));
+  app.use('/ws',           createProxyMiddleware({ target: MARKET_DATA,  ws: true, changeOrigin: true }));
 };
