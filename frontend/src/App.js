@@ -1,6 +1,9 @@
+import { useState } from 'react';
 import { useIsAuthenticated, useMsal } from '@azure/msal-react';
 import { InteractionStatus } from '@azure/msal-browser';
 import MarketDataTable from './components/MarketDataTable';
+import AccountSelector from './components/AccountSelector';
+import PortfolioPage from './components/PortfolioPage';
 import useMarketStatus from './hooks/useMarketStatus';
 import { loginRequest } from './auth/msalConfig';
 import './styles/layout.css';
@@ -16,10 +19,10 @@ function marketStatusLabel(status, loading) {
 }
 
 const NAV_ITEMS = [
-  { icon: '▦', label: 'Market Data',  active: true  },
-  { icon: '◈', label: 'Portfolio',    active: false },
-  { icon: '⇅', label: 'Orders',       active: false },
-  { icon: '⊕', label: 'Buy / Sell',   active: false },
+  { id: 'market-data', icon: '▦', label: 'Market Data' },
+  { id: 'portfolio',   icon: '◈', label: 'Portfolio'   },
+  { id: 'orders',      icon: '⇅', label: 'Orders'      },
+  { id: 'buy-sell',    icon: '⊕', label: 'Buy / Sell'  },
 ];
 
 function MarketStatusLabel() {
@@ -30,6 +33,8 @@ function MarketStatusLabel() {
 function App() {
   const isAuthenticated = useIsAuthenticated();
   const { instance, inProgress } = useMsal();
+  const [activePage, setActivePage] = useState('market-data');
+  const [selectedAccountId, setSelectedAccountId] = useState('');
 
   if (inProgress !== InteractionStatus.None) {
     return null;
@@ -59,6 +64,8 @@ function App() {
         <div className="topbar-divider" />
         <MarketStatusLabel />
         <div className="topbar-spacer" />
+        <AccountSelector selectedId={selectedAccountId} onSelect={setSelectedAccountId} />
+        <div className="topbar-divider" />
         <button className="btn-secondary" onClick={() => instance.logoutRedirect()}>Sign out</button>
       </header>
 
@@ -67,7 +74,11 @@ function App() {
         <nav className="sidebar">
           <span className="sidebar-section-label">Navigation</span>
           {NAV_ITEMS.map((item) => (
-            <div key={item.label} className={`sidebar-item${item.active ? ' active' : ''}`}>
+            <div
+              key={item.id}
+              className={`sidebar-item${activePage === item.id ? ' active' : ''}`}
+              onClick={() => setActivePage(item.id)}
+            >
               <span className="sidebar-item-icon">{item.icon}</span>
               {item.label}
             </div>
@@ -75,17 +86,24 @@ function App() {
         </nav>
 
         <main className="main-content">
-          <div className="page-header">
-            <h1 className="page-title">Market Data</h1>
-            <span className="page-subtitle">S&amp;P 500 — Top 10</span>
-          </div>
+          {activePage === 'market-data' && (
+            <>
+              <div className="page-header">
+                <h1 className="page-title">Market Data</h1>
+                <span className="page-subtitle">S&amp;P 500 — Top 10</span>
+              </div>
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title">Equities</span>
+                </div>
+                <MarketDataTable />
+              </div>
+            </>
+          )}
 
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Equities</span>
-            </div>
-            <MarketDataTable />
-          </div>
+          {activePage === 'portfolio' && (
+            <PortfolioPage selectedAccountId={selectedAccountId} />
+          )}
         </main>
 
       </div>
