@@ -5,13 +5,19 @@ on:
     workflows: ["CI — Build & Test"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      force_all:
+        description: 'Deploy all services regardless of changes'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   paths-filter:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       marketdata: ${{ steps.filter.outputs.marketdata }}
@@ -44,9 +50,9 @@ jobs:
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
       RG: ordermanagerai-prod-rg
-      DEPLOY_MARKETDATA: ${{ needs.paths-filter.outputs.marketdata == 'true' || needs.paths-filter.outputs.shared == 'true' }}
-      DEPLOY_ACCOUNTSERVICE: ${{ needs.paths-filter.outputs.accountservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
-      DEPLOY_FRONTEND: ${{ needs.paths-filter.outputs.frontend == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_MARKETDATA: ${{ inputs.force_all == true || needs.paths-filter.outputs.marketdata == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_ACCOUNTSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.accountservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_FRONTEND: ${{ inputs.force_all == true || needs.paths-filter.outputs.frontend == 'true' || needs.paths-filter.outputs.shared == 'true' }}
 
     steps:
       - uses: actions/checkout@v4
