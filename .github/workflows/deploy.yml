@@ -92,6 +92,15 @@ jobs:
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "BACKEND_FQDN=$FQDN" >> $GITHUB_ENV
 
+      - name: Get account service FQDN
+        if: env.DEPLOY_FRONTEND == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true'
+        run: |
+          FQDN=$(az containerapp show \
+            --name ordermanagerai-prod-acct-svc \
+            --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+
       # Docker build & push
       - name: Login to ACR
         run: |
@@ -126,6 +135,7 @@ jobs:
           docker build \
             --build-arg REACT_APP_API_URL="https://${{ env.BACKEND_FQDN }}" \
             --build-arg REACT_APP_WS_BASE="wss://${{ env.BACKEND_FQDN }}" \
+            --build-arg REACT_APP_ACCOUNTS_API_URL="https://${{ env.ACCOUNTSERVICE_FQDN }}" \
             --build-arg REACT_APP_AAD_CLIENT_ID="${{ vars.AAD_CLIENT_ID }}" \
             --build-arg REACT_APP_AAD_TENANT_ID="${{ vars.AAD_TENANT_ID }}" \
             --build-arg REACT_APP_AAD_SCOPE="${{ vars.AAD_SCOPE }}" \
@@ -165,15 +175,6 @@ jobs:
             --name ordermanagerai-prod-acct-svc \
             --resource-group "$RG" \
             --target-port 8081
-
-      - name: Get account service FQDN
-        if: env.DEPLOY_ACCOUNTSERVICE == 'true'
-        run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-acct-svc \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
 
       - name: Smoke test
         if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true' || env.DEPLOY_FRONTEND == 'true'
