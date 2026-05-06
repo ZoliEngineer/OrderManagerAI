@@ -1,9 +1,9 @@
-import request from './client';
+import { accountsRequest } from './client';
 
 export function getAccounts() {
-  return request('/api/accounts');
+  return accountsRequest('/api/accounts');
 }
 
 export function getAccountDetails(id) {
-  return request(`/api/accounts/${id}`);
+  return accountsRequest(`/api/accounts/${id}`);
 }
