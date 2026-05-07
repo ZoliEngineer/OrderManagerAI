@@ -39,6 +39,10 @@ export default function PortfolioPage({ selectedAccountId }) {
                   <dt>Cash Balance</dt>
                   <dd className="portfolio-stat-value">{formatCurrency(details.cashBalance)}</dd>
                 </div>
+                <div className="portfolio-stat">
+                  <dt>Available to Use</dt>
+                  <dd className="portfolio-stat-value">{formatCurrency(details.buyingPower)}</dd>
+                </div>
               </dl>
             )}
           </div>

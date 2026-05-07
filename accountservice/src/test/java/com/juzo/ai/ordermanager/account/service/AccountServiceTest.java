@@ -19,7 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
@@ -27,18 +27,25 @@ class AccountServiceTest {
     @Mock
     private AccountRepository accountRepository;
 
+    @Mock
+    private BuyingPowerCacheService cache;
+
     private AccountService accountService;
 
     private final String userId = "user-123";
     private final UUID accountId = UUID.randomUUID();
 
+    private Account buildAccount(UUID id, String name, BigDecimal cash, BigDecimal reserved) {
+        return new Account(id, userId, name, cash, reserved, Instant.now(), Instant.now());
+    }
+
     private Account buildAccount(UUID id, String name, BigDecimal balance) {
-        return new Account(id, userId, name, balance, BigDecimal.ZERO, Instant.now(), Instant.now());
+        return buildAccount(id, name, balance, BigDecimal.ZERO);
     }
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService(accountRepository);
+        accountService = new AccountService(accountRepository, cache);
     }
 
     // --- getAccountsForUser ---
@@ -68,14 +75,32 @@ class AccountServiceTest {
     // --- getAccountDetails ---
 
     @Test
-    void getAccountDetails_returnsMappedDetails() {
+    void getAccountDetails_returnsMappedDetailsWithBuyingPowerFromCache() {
         BigDecimal balance = new BigDecimal("2500.50");
+        BigDecimal cached = new BigDecimal("2000.00");
         Account account = buildAccount(accountId, "Trading", balance);
         when(accountRepository.findByIdAndUserId(accountId, userId)).thenReturn(Optional.of(account));
+        when(cache.get(accountId)).thenReturn(Optional.of(cached));
 
         AccountDetails result = accountService.getAccountDetails(accountId, userId);
 
-        assertThat(result).isEqualTo(new AccountDetails(accountId, "Trading", balance));
+        assertThat(result).isEqualTo(new AccountDetails(accountId, "Trading", balance, cached));
+        verifyNoMoreInteractions(cache);
+    }
+
+    @Test
+    void getAccountDetails_computesBuyingPowerAndPopulatesCacheOnMiss() {
+        BigDecimal cash = new BigDecimal("2500.50");
+        BigDecimal reserved = new BigDecimal("500.50");
+        BigDecimal expected = new BigDecimal("2000.00");
+        Account account = buildAccount(accountId, "Trading", cash, reserved);
+        when(accountRepository.findByIdAndUserId(accountId, userId)).thenReturn(Optional.of(account));
+        when(cache.get(accountId)).thenReturn(Optional.empty());
+
+        AccountDetails result = accountService.getAccountDetails(accountId, userId);
+
+        assertThat(result).isEqualTo(new AccountDetails(accountId, "Trading", cash, expected));
+        verify(cache).put(accountId, expected);
     }
 
     @Test
@@ -95,4 +120,5 @@ class AccountServiceTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("404");
     }
+
 }
