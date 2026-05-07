@@ -42,4 +42,5 @@ public class AccountController {
         String userId = jwt.getSubject();
         return ResponseEntity.ok(accountService.getAccountDetails(id, userId));
     }
+
 }
