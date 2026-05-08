@@ -102,6 +102,14 @@
 .day-change-pct.price-up   { color: var(--positive, #22c55e); }
 .day-change-pct.price-down { color: var(--negative, #ef4444); }
 
+.no-account-warning {
+  padding: 10px 18px;
+  font-size: 13px;
+  color: var(--negative);
+  background: rgba(248, 81, 73, 0.08);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 .status-loading {
   padding: 24px 18px;
   color: var(--text-secondary);
