@@ -22,6 +22,7 @@ jobs:
     outputs:
       marketdata: ${{ steps.filter.outputs.marketdata }}
       accountservice: ${{ steps.filter.outputs.accountservice }}
+      orderservice: ${{ steps.filter.outputs.orderservice }}
       frontend: ${{ steps.filter.outputs.frontend }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
@@ -36,6 +37,8 @@ jobs:
               - 'marketdata/**'
             accountservice:
               - 'accountservice/**'
+            orderservice:
+              - 'orderservice/**'
             frontend:
               - 'frontend/**'
             shared:
@@ -52,13 +55,17 @@ jobs:
       RG: ordermanagerai-prod-rg
       DEPLOY_MARKETDATA: ${{ inputs.force_all == true || needs.paths-filter.outputs.marketdata == 'true' || needs.paths-filter.outputs.shared == 'true' }}
       DEPLOY_ACCOUNTSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.accountservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_ORDERSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.orderservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
       DEPLOY_FRONTEND: ${{ inputs.force_all == true || needs.paths-filter.outputs.frontend == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      BACKEND_FQDN: ''
+      ACCOUNTSERVICE_FQDN: ''
+      ORDERSERVICE_FQDN: ''
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
-        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true'
+        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true' || env.DEPLOY_ORDERSERVICE == 'true'
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -78,12 +85,16 @@ jobs:
         if: env.DEPLOY_ACCOUNTSERVICE == 'true'
         run: cd accountservice && mvn clean package -DskipTests -B
 
+      - name: Build order service JAR
+        if: env.DEPLOY_ORDERSERVICE == 'true'
+        run: cd orderservice && mvn clean package -DskipTests -B
+
       - name: Build frontend
         if: env.DEPLOY_FRONTEND == 'true'
         run: cd frontend && npm ci && npm run build
 
-      # Login to Azure early so we can query the backend FQDN before
-      # building the frontend Docker image (URL is baked in at build time).
+      # Login to Azure early so we can query backend FQDNs before
+      # building the frontend Docker image (URLs are baked in at build time).
       - name: Azure Login
         uses: azure/login@v2
         with:
@@ -106,6 +117,15 @@ jobs:
             --resource-group "$RG" \
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+
+      - name: Get order service FQDN
+        if: env.DEPLOY_FRONTEND == 'true' || env.DEPLOY_ORDERSERVICE == 'true'
+        run: |
+          FQDN=$(az containerapp show \
+            --name ordermanagerai-prod-order-svc \
+            --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "ORDERSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
 
       # Docker build & push
       - name: Login to ACR
@@ -131,8 +151,17 @@ jobs:
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
-      # REACT_APP_API_URL and REACT_APP_WS_BASE are derived from the live
-      # Container App FQDN fetched above — no hardcoded URLs needed.
+      - name: Build and push order service image
+        if: env.DEPLOY_ORDERSERVICE == 'true'
+        run: |
+          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:${{ github.sha }}"
+          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:latest"
+          docker build -t "$TAG" -t "$TAG_LATEST" orderservice/
+          docker push "$TAG"
+          docker push "$TAG_LATEST"
+
+      # REACT_APP_* URLs are derived from live Container App FQDNs fetched
+      # above — no hardcoded URLs needed.
       - name: Build and push frontend image
         if: env.DEPLOY_FRONTEND == 'true'
         run: |
@@ -142,6 +171,7 @@ jobs:
             --build-arg REACT_APP_API_URL="https://${{ env.BACKEND_FQDN }}" \
             --build-arg REACT_APP_WS_BASE="wss://${{ env.BACKEND_FQDN }}" \
             --build-arg REACT_APP_ACCOUNTS_API_URL="https://${{ env.ACCOUNTSERVICE_FQDN }}" \
+            --build-arg REACT_APP_ORDERS_API_URL="https://${{ env.ORDERSERVICE_FQDN }}" \
             --build-arg REACT_APP_AAD_CLIENT_ID="${{ vars.AAD_CLIENT_ID }}" \
             --build-arg REACT_APP_AAD_TENANT_ID="${{ vars.AAD_TENANT_ID }}" \
             --build-arg REACT_APP_AAD_SCOPE="${{ vars.AAD_SCOPE }}" \
@@ -182,8 +212,20 @@ jobs:
             --resource-group "$RG" \
             --target-port 8081
 
+      - name: Deploy order service
+        if: env.DEPLOY_ORDERSERVICE == 'true'
+        run: |
+          az containerapp update \
+            --name ordermanagerai-prod-order-svc \
+            --resource-group "$RG" \
+            --image "${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:${{ github.sha }}"
+          az containerapp ingress update \
+            --name ordermanagerai-prod-order-svc \
+            --resource-group "$RG" \
+            --target-port 8082
+
       - name: Smoke test
-        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true' || env.DEPLOY_FRONTEND == 'true'
+        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true' || env.DEPLOY_ORDERSERVICE == 'true' || env.DEPLOY_FRONTEND == 'true'
         run: |
           echo "Waiting 30s for deployment to stabilize..."
           sleep 30
@@ -204,6 +246,15 @@ jobs:
               FAILED=1
             else
               echo "✅ Account service smoke test passed"
+            fi
+          fi
+          if [ "$DEPLOY_ORDERSERVICE" = "true" ]; then
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ORDERSERVICE_FQDN/actuator/health")
+            if [ "$STATUS" -ne 200 ]; then
+              echo "❌ Order service smoke test failed (HTTP $STATUS)"
+              FAILED=1
+            else
+              echo "✅ Order service smoke test passed"
             fi
           fi
           exit $FAILED
