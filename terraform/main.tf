@@ -307,6 +307,14 @@ resource "azurerm_container_app" "frontend" {
   }
 }
 
+# ── Supabase PostgreSQL (order service) ─────────────────
+resource "azurerm_key_vault_secret" "supabase_db_password" {
+  name         = "SUPABASE-DB-PASSWORD"
+  value        = var.supabase_db_password
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
 # ── Neon PostgreSQL (external managed service) ───────────
 resource "azurerm_key_vault_secret" "neon_db_password" {
   name         = "NEON-DB-PASSWORD"
@@ -381,6 +389,100 @@ resource "azurerm_container_app" "account_service" {
   ingress {
     external_enabled = true
     target_port      = 8081
+    transport        = "http"
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
+
+# ── Order Service Container App ──────────────────────────
+resource "azurerm_container_app" "order_service" {
+  name                         = "${local.prefix}-order-svc"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
+  }
+  secret {
+    name  = "supabase-db-password"
+    value = var.supabase_db_password
+  }
+  secret {
+    name  = "redis-password"
+    value = var.redis_password
+  }
+  secret {
+    name  = "kafka-api-key"
+    value = var.kafka_cluster_api_key
+  }
+  secret {
+    name  = "kafka-api-secret"
+    value = var.kafka_cluster_api_secret
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 2
+
+    container {
+      name   = "order-service"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "SPRING_DATASOURCE_PASSWORD"
+        secret_name = "supabase-db-password"
+      }
+      env {
+        name        = "REDIS_PASSWORD"
+        secret_name = "redis-password"
+      }
+      env {
+        name        = "KAFKA_CLUSTER_API_KEY"
+        secret_name = "kafka-api-key"
+      }
+      env {
+        name        = "KAFKA_CLUSTER_API_SECRET"
+        secret_name = "kafka-api-secret"
+      }
+      env {
+        name  = "AAD_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
+      }
+      env {
+        name  = "AAD_CLIENT_ID"
+        value = azuread_application.app.client_id
+      }
+      env {
+        name  = "CORS_ALLOWED_ORIGINS"
+        value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
+      }
+      env {
+        name  = "MARKET_DATA_SERVICE_BASE_URL"
+        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}"
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 8082
     transport        = "http"
     traffic_weight {
       percentage      = 100

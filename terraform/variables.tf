@@ -31,3 +31,8 @@ variable "neon_db_password" {
   description = "Password for the Neon PostgreSQL ordermanager_db_user role"
   sensitive   = true
 }
+
+variable "supabase_db_password" {
+  description = "Password for the Supabase PostgreSQL ordermanager_user role (order service)"
+  sensitive   = true
+}

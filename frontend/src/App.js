@@ -96,7 +96,7 @@ function App() {
                 <div className="card-header">
                   <span className="card-title">Equities</span>
                 </div>
-                <MarketDataTable />
+                <MarketDataTable selectedAccountId={selectedAccountId} />
               </div>
             </>
           )}

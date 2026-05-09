@@ -13,6 +13,7 @@
         <module>marketdata</module>
         <module>frontend</module>
         <module>accountservice</module>
+        <module>orderservice</module>
     </modules>
 
      <properties>

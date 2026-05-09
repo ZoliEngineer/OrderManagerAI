@@ -29,3 +29,7 @@ output "aad_scope" {
 output "account_service_url" {
   value = "https://${azurerm_container_app.account_service.ingress[0].fqdn}"
 }
+
+output "order_service_url" {
+  value = "https://${azurerm_container_app.order_service.ingress[0].fqdn}"
+}

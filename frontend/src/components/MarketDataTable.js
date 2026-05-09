@@ -1,9 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import useMarketData from '../hooks/useMarketData';
+import OrderTicketModal from './OrderTicketModal';
 import './MarketDataTable.css';
 
-function MarketDataTable() {
+function MarketDataTable({ selectedAccountId }) {
   const { stocks, loading, error } = useMarketData();
+  const [selectedStock, setSelectedStock] = useState(null);
+  const [noAccountWarning, setNoAccountWarning] = useState(false);
   const prevPrices = useRef({});
   const [flashMap, setFlashMap] = useState({});
 
@@ -35,6 +38,17 @@ function MarketDataTable() {
   if (error)   return <p className="status-error">Error: {error}</p>;
 
   return (
+    <>
+    {noAccountWarning && (
+      <div className="no-account-warning">Select an account before trading.</div>
+    )}
+    {selectedStock && (
+      <OrderTicketModal
+        stock={selectedStock}
+        accountId={selectedAccountId}
+        onClose={() => setSelectedStock(null)}
+      />
+    )}
     <table className="market-table">
       <thead>
         <tr>
@@ -53,7 +67,19 @@ function MarketDataTable() {
           const sign = v => v > 0 ? '+' : '';
 
           return (
-            <tr key={stock.ticker} className={flashMap[stock.ticker] || ''}>
+            <tr
+              key={stock.ticker}
+              className={flashMap[stock.ticker] || ''}
+              style={{ cursor: 'pointer' }}
+              onClick={() => {
+                if (!selectedAccountId) {
+                  setNoAccountWarning(true);
+                  setTimeout(() => setNoAccountWarning(false), 3000);
+                  return;
+                }
+                setSelectedStock({ ticker: stock.ticker, name: stock.name, price: Number(stock.price) });
+              }}
+            >
               <td><span className="ticker-badge">{stock.ticker}</span></td>
               <td>{stock.name}</td>
               <td className="align-right">
@@ -85,6 +111,7 @@ function MarketDataTable() {
         })}
       </tbody>
     </table>
+    </>
   );
 }
 
