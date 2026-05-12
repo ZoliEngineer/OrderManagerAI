@@ -131,9 +131,9 @@ function OrderTicketModal({ stock, accountId, onClose }) {
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn-primary" disabled={submitting}>
-              {submitting ? 'Placing…' : `Place ${side} order`}
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting || status?.ok}>Cancel</button>
+            <button type="submit" className="btn-primary" disabled={submitting || status?.ok}>
+              {submitting ? 'Placing…' : 'Place Order'}
             </button>
           </div>
 
