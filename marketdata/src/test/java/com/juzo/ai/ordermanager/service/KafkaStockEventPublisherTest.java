@@ -1,5 +1,6 @@
 package com.juzo.ai.ordermanager.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.juzo.ai.ordermanager.entity.Stock;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +31,7 @@ class KafkaStockEventPublisherTest {
 
     @BeforeEach
     void setUp() {
-        publisher = new KafkaStockEventPublisher(kafkaTemplate, TOPIC);
+        publisher = new KafkaStockEventPublisher(kafkaTemplate, new ObjectMapper(), TOPIC);
     }
 
     @Test

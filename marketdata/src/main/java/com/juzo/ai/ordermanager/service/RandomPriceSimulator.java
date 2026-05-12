@@ -1,7 +1,7 @@
 package com.juzo.ai.ordermanager.service;
 
 import com.juzo.ai.ordermanager.entity.Stock;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -16,7 +16,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 @Component
-@ConditionalOnMissingBean(PriceUpdateSource.class)
+@ConditionalOnExpression("'${finnhub.api-key:}' == ''")
 public class RandomPriceSimulator implements PriceUpdateSource {
 
     private final ConcurrentHashMap<String, Stock> stocks = new ConcurrentHashMap<>();
