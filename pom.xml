@@ -14,6 +14,7 @@
         <module>frontend</module>
         <module>accountservice</module>
         <module>orderservice</module>
+        <module>riskservice</module>
     </modules>
 
      <properties>

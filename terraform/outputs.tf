@@ -33,3 +33,7 @@ output "account_service_url" {
 output "order_service_url" {
   value = "https://${azurerm_container_app.order_service.ingress[0].fqdn}"
 }
+
+output "risk_service_url" {
+  value = "https://${azurerm_container_app.risk_service.ingress[0].fqdn}"
+}

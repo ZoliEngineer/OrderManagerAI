@@ -490,3 +490,68 @@ resource "azurerm_container_app" "order_service" {
     }
   }
 }
+
+# ── Risk Service Container App ───────────────────────────
+# Stateless — no DB. Uses the shared Redis instance already declared above.
+# gRPC port 9090 is internal (Container Apps environment DNS); only the
+# actuator port 8083 is exposed via ingress.
+resource "azurerm_container_app" "risk_service" {
+  name                         = "${local.prefix}-risk-svc"
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  resource_group_name          = azurerm_resource_group.main.name
+  revision_mode                = "Single"
+
+  lifecycle {
+    ignore_changes = [template[0].container[0].image]
+  }
+
+  registry {
+    server               = azurerm_container_registry.acr.login_server
+    username             = azurerm_container_registry.acr.admin_username
+    password_secret_name = "acr-password"
+  }
+
+  secret {
+    name  = "acr-password"
+    value = azurerm_container_registry.acr.admin_password
+  }
+  secret {
+    name  = "redis-password"
+    value = var.redis_password
+  }
+
+  template {
+    min_replicas = 0
+    max_replicas = 2
+
+    container {
+      name   = "risk-service"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name        = "REDIS_PASSWORD"
+        secret_name = "redis-password"
+      }
+      env {
+        name  = "AAD_TENANT_ID"
+        value = data.azurerm_client_config.current.tenant_id
+      }
+      env {
+        name  = "AAD_CLIENT_ID"
+        value = azuread_application.app.client_id
+      }
+    }
+  }
+
+  ingress {
+    external_enabled = true
+    target_port      = 8083
+    transport        = "http"
+    traffic_weight {
+      percentage      = 100
+      latest_revision = true
+    }
+  }
+}
