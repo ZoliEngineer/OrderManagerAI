@@ -7,40 +7,45 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
-@Component
+@Service
 public class KafkaStockEventPublisher implements StockEventPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(KafkaStockEventPublisher.class);
 
     private final KafkaTemplate<String, String> kafkaTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
     private final String topic;
 
     public KafkaStockEventPublisher(KafkaTemplate<String, String> kafkaTemplate,
+                                    ObjectMapper objectMapper,
                                     @Value("${app.kafka.topic.marketdata}") String topic) {
         this.kafkaTemplate = kafkaTemplate;
+        this.objectMapper = objectMapper;
         this.topic = topic;
     }
 
     @Override
     public void publish(Stock stock) {
+        String key = stock.ticker();
+        String payload;
         try {
-            String json = objectMapper.writeValueAsString(stock);
-            kafkaTemplate.send(topic, stock.ticker(), json)
+            payload = objectMapper.writeValueAsString(stock);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize stock {} for topic {}", key, topic, e);
+            return;
+        }
+        kafkaTemplate.send(topic, key, payload)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
-                        log.error("Kafka publish failed for {}", stock.ticker(), ex);
+                        log.error("Failed to publish market.prices for stock {}", key, ex);
                     } else {
-                        log.debug("Price update published to Kafka topic {} [partition={}, offset={}]",
-                            topic,
-                            result.getRecordMetadata().partition(),
-                            result.getRecordMetadata().offset());
+                        log.debug("Published market.prices partition={} offset={} ticker={}",
+                                result.getRecordMetadata().partition(),
+                                result.getRecordMetadata().offset(),
+                                key);
                     }
                 });
-        } catch (JsonProcessingException e) {
-            log.error("Failed to serialize stock {}", stock.ticker(), e);
-        }
     }
 }

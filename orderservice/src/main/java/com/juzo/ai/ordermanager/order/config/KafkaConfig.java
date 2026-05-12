@@ -1,4 +1,4 @@
-package com.juzo.ai.ordermanager.config;
+package com.juzo.ai.ordermanager.order.config;
 
 //import org.apache.kafka.clients.admin.NewTopic;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 public class KafkaConfig {
 
     @Bean
-    ObjectMapper objectMapper() {
+    public ObjectMapper objectMapper() {
         return new ObjectMapper();
     }
 

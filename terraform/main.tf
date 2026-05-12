@@ -244,7 +244,7 @@ resource "azurerm_container_app" "marketdata" {
 
   ingress {
     external_enabled = true
-    target_port      = 80  # placeholder serves on 80; deploy workflow sets real port via image update
+    target_port      = 8080
     transport        = "http"
     traffic_weight {
       percentage      = 100
