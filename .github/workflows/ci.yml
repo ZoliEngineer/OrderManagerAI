@@ -17,6 +17,8 @@ jobs:
     outputs:
       marketdata: ${{ steps.filter.outputs.marketdata }}
       accountservice: ${{ steps.filter.outputs.accountservice }}
+      orderservice: ${{ steps.filter.outputs.orderservice }}
+      riskservice: ${{ steps.filter.outputs.riskservice }}
       frontend: ${{ steps.filter.outputs.frontend }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
@@ -31,6 +33,11 @@ jobs:
               - 'marketdata/**'
             accountservice:
               - 'accountservice/**'
+            orderservice:
+              - 'orderservice/**'
+            riskservice:
+              - 'riskservice/**'
+              - 'proto/**'
             frontend:
               - 'frontend/**'
             shared:
@@ -83,6 +90,54 @@ jobs:
         with:
           name: Account Service Tests
           path: accountservice/target/surefire-reports/*.xml
+          reporter: java-junit
+
+  orderservice-test:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.orderservice == 'true' || needs.paths-filter.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run order service tests
+        run: cd orderservice && mvn clean verify -B
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Order Service Tests
+          path: orderservice/target/surefire-reports/*.xml
+          reporter: java-junit
+
+  riskservice-test:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.riskservice == 'true' || needs.paths-filter.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run risk service tests
+        run: cd riskservice && mvn clean verify -B
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Risk Service Tests
+          path: riskservice/target/surefire-reports/*.xml
           reporter: java-junit
 
   frontend-test:

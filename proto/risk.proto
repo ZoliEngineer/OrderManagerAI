@@ -1,0 +1,39 @@
+syntax = "proto3";
+package com.juzo.ai.ordermanager.risk.v1;
+option java_multiple_files = true;
+option java_package = "com.juzo.ai.ordermanager.risk.grpc";
+option java_outer_classname = "RiskProto";
+
+service RiskCheck {
+  rpc Check (RiskCheckRequest) returns (RiskCheckResponse);
+}
+
+message RiskCheckRequest {
+  string account_id   = 1;
+  string user_id      = 2;
+  string ticker       = 3;
+  Side   side         = 4;
+  Type   type         = 5;
+  string quantity     = 6;   // BigDecimal as plain string
+  string limit_price  = 7;   // empty when type=MARKET
+
+  enum Side { SIDE_UNSPECIFIED = 0; BUY = 1; SELL = 2; }
+  enum Type { TYPE_UNSPECIFIED = 0; MARKET = 1; LIMIT = 2; }
+}
+
+message RiskCheckResponse {
+  Decision   decision    = 1;
+  ReasonCode reason      = 2;
+  string     message     = 3;
+  string     decision_id = 4;
+
+  enum Decision { DECISION_UNSPECIFIED = 0; APPROVED = 1; REJECTED = 2; }
+  enum ReasonCode {
+    REASON_UNSPECIFIED       = 0;
+    INSUFFICIENT_FUNDS       = 1;
+    INSUFFICIENT_SHARES      = 2;
+    BUYING_POWER_UNAVAILABLE = 3;
+    PRICE_UNAVAILABLE        = 4;
+    INVALID_REQUEST          = 5;
+  }
+}

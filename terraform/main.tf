@@ -30,6 +30,24 @@ data "azurerm_client_config" "current" {}
 locals {
   prefix     = "${var.project_name}-${var.environment}"
   sub_suffix = substr(replace(data.azurerm_client_config.current.subscription_id, "-", ""), 0, 6)
+
+  # Predicted frontend origin — used for CORS and Entra ID redirect URIs.
+  # Derived from the environment default_domain to avoid a circular dependency.
+  frontend_origin = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
+
+  # ACR credentials passed to every module call.
+  acr = {
+    server   = azurerm_container_registry.acr.login_server
+    username = azurerm_container_registry.acr.admin_username
+    password = azurerm_container_registry.acr.admin_password
+  }
+
+  # Env vars shared by every backend service.
+  common_env_vars = [
+    { name = "AAD_TENANT_ID",        value = data.azurerm_client_config.current.tenant_id },
+    { name = "AAD_CLIENT_ID",        value = azuread_application.app.client_id             },
+    { name = "CORS_ALLOWED_ORIGINS", value = local.frontend_origin                         },
+  ]
 }
 
 # ── Entra ID App Registration ────────────────────────────
@@ -77,6 +95,10 @@ resource "azuread_application" "app" {
       "http://localhost:3000/",
       "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}/",
     ]
+  }
+
+  lifecycle {
+    ignore_changes = [identifier_uris]
   }
 }
 
@@ -132,6 +154,20 @@ resource "azurerm_key_vault_secret" "finnhub_api_key" {
   depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
+resource "azurerm_key_vault_secret" "supabase_db_password" {
+  name         = "SUPABASE-DB-PASSWORD"
+  value        = var.supabase_db_password
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
+resource "azurerm_key_vault_secret" "neon_db_password" {
+  name         = "NEON-DB-PASSWORD"
+  value        = var.neon_db_password
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
 # ── Container Registry ──────────────────────────────────
 resource "azurerm_container_registry" "acr" {
   name                = "${var.project_name}${var.environment}acr${local.sub_suffix}"
@@ -142,351 +178,140 @@ resource "azurerm_container_registry" "acr" {
 }
 
 # ── Container App Environment ────────────────────────────
-# Shared networking/logging layer for both container apps.
-# Consumption plan = pay-per-use, well within the free tier for low traffic.
+# Shared networking/logging layer. Consumption plan = pay-per-use.
 resource "azurerm_container_app_environment" "main" {
   name                = "${local.prefix}-env"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
 }
 
-# ── Market Data Container App ────────────────────────────
-# Secrets are stored directly in the Container App rather than fetched from
-# Key Vault at runtime — this avoids the managed-identity/access-policy
-# ordering problem. Key Vault still holds the canonical copies for auditing.
-# CORS origin uses the environment's default_domain to predict the frontend
-# FQDN without creating a circular resource dependency.
-resource "azurerm_container_app" "marketdata" {
-  name                         = "${local.prefix}-marketdata"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
+# ── Container Apps ───────────────────────────────────────
 
-  lifecycle {
-    ignore_changes = [template[0].container[0].image]
-  }
+module "marketdata" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-marketdata"
+  container_name = "marketdata"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  acr_server     = local.acr.server
+  acr_username   = local.acr.username
+  acr_password   = local.acr.password
+  target_port    = 8080
+  max_replicas   = 1
 
-  registry {
-    server               = azurerm_container_registry.acr.login_server
-    username             = azurerm_container_registry.acr.admin_username
-    password_secret_name = "acr-password"
-  }
+  extra_secrets = concat(
+    [
+      { name = "redis-password",   value = var.redis_password           },
+      { name = "kafka-api-key",    value = var.kafka_cluster_api_key    },
+      { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
+    ],
+    var.finnhub_api_key != "" ? [{ name = "finnhub-api-key", value = var.finnhub_api_key }] : []
+  )
 
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.acr.admin_password
-  }
-  secret {
-    name  = "redis-password"
-    value = var.redis_password
-  }
-  secret {
-    name  = "kafka-api-key"
-    value = var.kafka_cluster_api_key
-  }
-  secret {
-    name  = "kafka-api-secret"
-    value = var.kafka_cluster_api_secret
-  }
-  dynamic "secret" {
-    for_each = var.finnhub_api_key != "" ? [var.finnhub_api_key] : []
-    content {
-      name  = "finnhub-api-key"
-      value = secret.value
-    }
-  }
-
-  template {
-    min_replicas = 0
-    max_replicas = 1
-
-    container {
-      name   = "marketdata"
-      # Placeholder lets Terraform create the app without images in ACR.
-      # The deploy workflow overwrites this on the first push to main.
-      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name        = "REDIS_PASSWORD"
-        secret_name = "redis-password"
-      }
-      env {
-        name        = "KAFKA_CLUSTER_API_KEY"
-        secret_name = "kafka-api-key"
-      }
-      env {
-        name        = "KAFKA_CLUSTER_API_SECRET"
-        secret_name = "kafka-api-secret"
-      }
-      env {
-        name  = "AAD_TENANT_ID"
-        value = data.azurerm_client_config.current.tenant_id
-      }
-      env {
-        name  = "AAD_CLIENT_ID"
-        value = azuread_application.app.client_id
-      }
-      env {
-        name  = "CORS_ALLOWED_ORIGINS"
-        value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
-      }
-      dynamic "env" {
-        for_each = var.finnhub_api_key != "" ? [1] : []
-        content {
-          name        = "FINNHUB_API_KEY"
-          secret_name = "finnhub-api-key"
-        }
-      }
-    }
-  }
-
-  ingress {
-    external_enabled = true
-    target_port      = 8080
-    transport        = "http"
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  env_vars = concat(
+    [
+      { name = "REDIS_PASSWORD",           secret_name = "redis-password"   },
+      { name = "KAFKA_CLUSTER_API_KEY",    secret_name = "kafka-api-key"    },
+      { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
+    ],
+    local.common_env_vars,
+    var.finnhub_api_key != "" ? [{ name = "FINNHUB_API_KEY", secret_name = "finnhub-api-key" }] : []
+  )
 }
 
-# ── Frontend Container App ───────────────────────────────
-# Serves the nginx+React image. AAD config is baked into the image at build
-# time via Docker build-args, so only BACKEND_URL is needed at runtime
-# (nginx uses it for proxying if configured).
-resource "azurerm_container_app" "frontend" {
-  name                         = "${local.prefix}-frontend"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
+module "frontend" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-frontend"
+  container_name = "frontend"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  acr_server     = local.acr.server
+  acr_username   = local.acr.username
+  acr_password   = local.acr.password
+  target_port    = 80
+  max_replicas   = 1
 
-  lifecycle {
-    ignore_changes = [template[0].container[0].image]
-  }
-
-  registry {
-    server               = azurerm_container_registry.acr.login_server
-    username             = azurerm_container_registry.acr.admin_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.acr.admin_password
-  }
-
-  template {
-    min_replicas = 0
-    max_replicas = 1
-
-    container {
-      name   = "frontend"
-      # Placeholder — replaced by deploy workflow on first push to main.
-      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name  = "BACKEND_URL"
-        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}"
-      }
-    }
-  }
-
-  ingress {
-    external_enabled = true
-    target_port      = 80
-    transport        = "http"
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  env_vars = [
+    { name = "BACKEND_URL", value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
+  ]
 }
 
-# ── Supabase PostgreSQL (order service) ─────────────────
-resource "azurerm_key_vault_secret" "supabase_db_password" {
-  name         = "SUPABASE-DB-PASSWORD"
-  value        = var.supabase_db_password
-  key_vault_id = azurerm_key_vault.main.id
-  depends_on   = [azurerm_key_vault_access_policy.deployer]
+module "account_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-acct-svc"
+  container_name = "account-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  acr_server     = local.acr.server
+  acr_username   = local.acr.username
+  acr_password   = local.acr.password
+  target_port    = 8081
+
+  extra_secrets = [
+    { name = "redis-password",    value = var.redis_password   },
+    { name = "neon-db-password",  value = var.neon_db_password },
+  ]
+
+  env_vars = concat(
+    [
+      { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "neon-db-password" },
+      { name = "REDIS_PASSWORD",             secret_name = "redis-password"   },
+    ],
+    local.common_env_vars
+  )
 }
 
-# ── Neon PostgreSQL (external managed service) ───────────
-resource "azurerm_key_vault_secret" "neon_db_password" {
-  name         = "NEON-DB-PASSWORD"
-  value        = var.neon_db_password
-  key_vault_id = azurerm_key_vault.main.id
-  depends_on   = [azurerm_key_vault_access_policy.deployer]
+module "order_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-order-svc"
+  container_name = "order-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  acr_server     = local.acr.server
+  acr_username   = local.acr.username
+  acr_password   = local.acr.password
+  target_port    = 8082
+
+  extra_secrets = [
+    { name = "supabase-db-password", value = var.supabase_db_password      },
+    { name = "redis-password",       value = var.redis_password             },
+    { name = "kafka-api-key",        value = var.kafka_cluster_api_key      },
+    { name = "kafka-api-secret",     value = var.kafka_cluster_api_secret   },
+  ]
+
+  env_vars = concat(
+    [
+      { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "supabase-db-password" },
+      { name = "REDIS_PASSWORD",             secret_name = "redis-password"        },
+      { name = "KAFKA_CLUSTER_API_KEY",      secret_name = "kafka-api-key"         },
+      { name = "KAFKA_CLUSTER_API_SECRET",   secret_name = "kafka-api-secret"      },
+    ],
+    local.common_env_vars,
+    [{ name = "MARKET_DATA_SERVICE_BASE_URL",
+       value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" }]
+  )
 }
 
-# ── Account Service Container App ────────────────────────
-resource "azurerm_container_app" "account_service" {
-  name                         = "${local.prefix}-acct-svc"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
+# Stateless — no DB. gRPC port 9090 is internal; only actuator port 8083 via ingress.
+module "risk_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-risk-svc"
+  container_name = "risk-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  acr_server     = local.acr.server
+  acr_username   = local.acr.username
+  acr_password   = local.acr.password
+  target_port    = 8083
 
-  lifecycle {
-    ignore_changes = [template[0].container[0].image]
-  }
+  extra_secrets = [
+    { name = "redis-password", value = var.redis_password },
+  ]
 
-  registry {
-    server               = azurerm_container_registry.acr.login_server
-    username             = azurerm_container_registry.acr.admin_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.acr.admin_password
-  }
-  secret {
-    name  = "redis-password"
-    value = var.redis_password
-  }
-  secret {
-    name  = "neon-db-password"
-    value = var.neon_db_password
-  }
-
-  template {
-    min_replicas = 0
-    max_replicas = 2
-
-    container {
-      name   = "account-service"
-      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name        = "SPRING_DATASOURCE_PASSWORD"
-        secret_name = "neon-db-password"
-      }
-      env {
-        name        = "REDIS_PASSWORD"
-        secret_name = "redis-password"
-      }
-      env {
-        name  = "AAD_TENANT_ID"
-        value = data.azurerm_client_config.current.tenant_id
-      }
-      env {
-        name  = "AAD_CLIENT_ID"
-        value = azuread_application.app.client_id
-      }
-      env {
-        name  = "CORS_ALLOWED_ORIGINS"
-        value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
-      }
-    }
-  }
-
-  ingress {
-    external_enabled = true
-    target_port      = 8081
-    transport        = "http"
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
-}
-
-# ── Order Service Container App ──────────────────────────
-resource "azurerm_container_app" "order_service" {
-  name                         = "${local.prefix}-order-svc"
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
-
-  lifecycle {
-    ignore_changes = [template[0].container[0].image]
-  }
-
-  registry {
-    server               = azurerm_container_registry.acr.login_server
-    username             = azurerm_container_registry.acr.admin_username
-    password_secret_name = "acr-password"
-  }
-
-  secret {
-    name  = "acr-password"
-    value = azurerm_container_registry.acr.admin_password
-  }
-  secret {
-    name  = "supabase-db-password"
-    value = var.supabase_db_password
-  }
-  secret {
-    name  = "redis-password"
-    value = var.redis_password
-  }
-  secret {
-    name  = "kafka-api-key"
-    value = var.kafka_cluster_api_key
-  }
-  secret {
-    name  = "kafka-api-secret"
-    value = var.kafka_cluster_api_secret
-  }
-
-  template {
-    min_replicas = 0
-    max_replicas = 2
-
-    container {
-      name   = "order-service"
-      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      env {
-        name        = "SPRING_DATASOURCE_PASSWORD"
-        secret_name = "supabase-db-password"
-      }
-      env {
-        name        = "REDIS_PASSWORD"
-        secret_name = "redis-password"
-      }
-      env {
-        name        = "KAFKA_CLUSTER_API_KEY"
-        secret_name = "kafka-api-key"
-      }
-      env {
-        name        = "KAFKA_CLUSTER_API_SECRET"
-        secret_name = "kafka-api-secret"
-      }
-      env {
-        name  = "AAD_TENANT_ID"
-        value = data.azurerm_client_config.current.tenant_id
-      }
-      env {
-        name  = "AAD_CLIENT_ID"
-        value = azuread_application.app.client_id
-      }
-      env {
-        name  = "CORS_ALLOWED_ORIGINS"
-        value = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
-      }
-      env {
-        name  = "MARKET_DATA_SERVICE_BASE_URL"
-        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}"
-      }
-    }
-  }
-
-  ingress {
-    external_enabled = true
-    target_port      = 8082
-    transport        = "http"
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
-    }
-  }
+  env_vars = concat(
+    [
+      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
+    ],
+    local.common_env_vars
+  )
 }

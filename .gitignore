@@ -24,6 +24,8 @@ hs_err_pid*
 replay_pid*
 marketdata/target/*
 accountservice/target/*
+orderservice/target/*
+riskservice/target/*
 frontend/node_modules/*
 frontend/target/*
 frontend/node/*
@@ -35,3 +37,9 @@ frontend/build/*
 .env
 terraform.tfvars
 terraform/.terraform/terraform.tfstate
+REQUIREMENTS.txt
+.vscode/launch.json
+docs/account-service-plan.md
+docs/app-review-2026-04-30.md
+terraform/.terraform.lock.hcl
+terraform/.terraform/providers/*
