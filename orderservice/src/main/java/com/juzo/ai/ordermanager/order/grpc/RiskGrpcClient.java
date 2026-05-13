@@ -1,19 +1,21 @@
 package com.juzo.ai.ordermanager.order.grpc;
 
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
 import com.juzo.ai.ordermanager.order.dto.PlaceOrderRequest;
 import com.juzo.ai.ordermanager.order.dto.RiskDecision;
 import com.juzo.ai.ordermanager.order.entity.OrderSide;
 import com.juzo.ai.ordermanager.risk.grpc.RiskCheckGrpc;
 import com.juzo.ai.ordermanager.risk.grpc.RiskCheckRequest;
 import com.juzo.ai.ordermanager.risk.grpc.RiskCheckResponse;
+
 import io.grpc.Metadata;
 import io.grpc.stub.MetadataUtils;
 import net.devh.boot.grpc.client.inject.GrpcClient;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Component;
-
-import java.util.concurrent.TimeUnit;
 
 @Component
 public class RiskGrpcClient {
@@ -35,7 +37,7 @@ public class RiskGrpcClient {
                     .check(toProto(req, userId));
             return RiskDecision.from(response);
         } catch (Exception ex) {
-            log.warn("Risk Service unavailable — failing safe: {}", ex.getMessage());
+            log.error("Risk Service unavailable — failing safe: {}", ex);
             return RiskDecision.systemReject("Risk Service unavailable");
         }
     }
