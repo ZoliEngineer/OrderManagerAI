@@ -52,7 +52,7 @@ resource "azurerm_container_app" "this" {
   ingress {
     external_enabled = true
     target_port      = var.target_port
-    transport        = "http"
+    transport        = var.transport
     traffic_weight {
       percentage      = 100
       latest_revision = true

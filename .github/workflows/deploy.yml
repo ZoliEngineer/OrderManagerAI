@@ -183,11 +183,7 @@ jobs:
           az containerapp update \
             --name ordermanagerai-prod-order-svc \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:${{ github.sha }}" \
-            --set-env-vars \
-              "APP_SERVICES_MARKET_DATA_SERVICE_BASE_URL=https://$BACKEND_FQDN" \
-              "GRPC_CLIENT_RISK_SERVICE_ADDRESS=dns:///$RISKSERVICE_FQDN:443" \
-              "GRPC_CLIENT_RISK_SERVICE_NEGOTIATION_TYPE=tls"
+            --image "${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:${{ github.sha }}"
           az containerapp ingress update \
             --name ordermanagerai-prod-order-svc \
             --resource-group "$RG" \
@@ -199,11 +195,6 @@ jobs:
             --name ordermanagerai-prod-risk-svc \
             --resource-group "$RG" \
             --image "${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-risk-svc \
-            --resource-group "$RG" \
-            --target-port 9090 \
-            --transport http2
 
       - name: Smoke test
         run: |

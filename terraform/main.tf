@@ -287,12 +287,18 @@ module "order_service" {
       { name = "KAFKA_CLUSTER_API_SECRET",   secret_name = "kafka-api-secret"      },
     ],
     local.common_env_vars,
-    [{ name = "MARKET_DATA_SERVICE_BASE_URL",
-       value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" }]
+    [
+      { name = "APP_SERVICES_MARKET_DATA_SERVICE_BASE_URL",
+        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
+      { name = "GRPC_CLIENT_RISK_SERVICE_ADDRESS",
+        value = "dns:///${local.prefix}-risk-svc.${azurerm_container_app_environment.main.default_domain}:443" },
+      { name = "GRPC_CLIENT_RISK_SERVICE_NEGOTIATION_TYPE",
+        value = "tls" },
+    ]
   )
 }
 
-# Stateless — no DB. gRPC port 9090 is internal; only actuator port 8083 via ingress.
+# gRPC on 9090 (http2); actuator health on 8083 is only reachable internally.
 module "risk_service" {
   source         = "./modules/container-app"
   name           = "${local.prefix}-risk-svc"
@@ -302,15 +308,20 @@ module "risk_service" {
   acr_server     = local.acr.server
   acr_username   = local.acr.username
   acr_password   = local.acr.password
-  target_port    = 8083
+  target_port    = 9090
+  transport      = "http2"
 
   extra_secrets = [
-    { name = "redis-password", value = var.redis_password },
+    { name = "redis-password",   value = var.redis_password           },
+    { name = "kafka-api-key",    value = var.kafka_cluster_api_key    },
+    { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
   ]
 
   env_vars = concat(
     [
-      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
+      { name = "REDIS_PASSWORD",           secret_name = "redis-password"   },
+      { name = "KAFKA_CLUSTER_API_KEY",    secret_name = "kafka-api-key"    },
+      { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars
   )
