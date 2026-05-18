@@ -1,5 +1,8 @@
 package com.juzo.ai.ordermanager.risk.grpc;
 
+import com.juzo.ai.ordermanager.risk.service.BuyingPowerCache;
+import com.juzo.ai.ordermanager.risk.service.PriceCache;
+import com.juzo.ai.ordermanager.risk.service.RiskEvaluationService;
 import io.grpc.ManagedChannel;
 import io.grpc.Server;
 import io.grpc.inprocess.InProcessChannelBuilder;
@@ -7,20 +10,37 @@ import io.grpc.inprocess.InProcessServerBuilder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class RiskCheckGrpcServiceTest {
+
+    @Mock
+    private BuyingPowerCache buyingPowerCache;
+
+    @Mock
+    private PriceCache priceCache;
 
     private Server server;
     private ManagedChannel channel;
 
     @BeforeEach
     void setUp() throws Exception {
+        // stub so price lookup succeeds and the invalid UUID is reached
+        when(priceCache.get("AAPL")).thenReturn(Optional.of(new BigDecimal("100.00")));
+        RiskEvaluationService evaluationService = new RiskEvaluationService(buyingPowerCache, priceCache);
         String serverName = InProcessServerBuilder.generateName();
         server = InProcessServerBuilder.forName(serverName)
                 .directExecutor()
-                .addService(new RiskCheckGrpcService())
+                .addService(new RiskCheckGrpcService(evaluationService))
                 .build()
                 .start();
         channel = InProcessChannelBuilder.forName(serverName)

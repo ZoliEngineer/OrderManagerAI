@@ -37,6 +37,11 @@ variable "max_replicas" {
   default = 2
 }
 
+variable "transport" {
+  type    = string
+  default = "http"
+}
+
 variable "extra_secrets" {
   description = "Service-specific secrets beyond acr-password."
   type = list(object({

@@ -26,6 +26,7 @@ marketdata/target/*
 accountservice/target/*
 orderservice/target/*
 riskservice/target/*
+riskservice/bin/
 frontend/node_modules/*
 frontend/target/*
 frontend/node/*
@@ -43,3 +44,4 @@ docs/account-service-plan.md
 docs/app-review-2026-04-30.md
 terraform/.terraform.lock.hcl
 terraform/.terraform/providers/*
+
