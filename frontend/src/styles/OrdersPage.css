@@ -1,0 +1,221 @@
+.orders-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.orders-loading,
+.orders-empty,
+.orders-error {
+  padding: 32px 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.orders-error {
+  color: var(--negative);
+}
+
+/* ── Table ───────────────────────────────────────────── */
+
+.orders-table-wrap {
+  overflow-x: auto;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.orders-table thead tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.orders-table th {
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.orders-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.orders-table th.sortable:hover {
+  color: var(--text-primary);
+}
+
+.orders-table th.sort-active {
+  color: var(--accent);
+}
+
+.orders-table th.col-num,
+.orders-table td.col-num {
+  text-align: right;
+}
+
+.orders-table tbody tr {
+  border-bottom: 1px solid var(--border);
+}
+
+.orders-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.orders-table tbody tr:hover {
+  background: var(--bg-elevated);
+}
+
+.orders-table td {
+  padding: 10px 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.col-time {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.col-type {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* ── Ticker badge ────────────────────────────────────── */
+
+.order-ticker {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+/* ── Side ────────────────────────────────────────────── */
+
+.order-side {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.order-side--buy  { color: var(--positive); }
+.order-side--sell { color: var(--negative); }
+
+/* ── Status badges ───────────────────────────────────── */
+
+.order-status {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  font-family: var(--font-ui);
+}
+
+.order-status--new,
+.order-status--pending         { background: rgba(210, 175, 55,  0.15); color: #d2af37; }
+.order-status--partially-filled { background: rgba(230, 140,  0,  0.15); color: #e68c00; }
+.order-status--filled          { background: rgba( 63, 185,  80, 0.15); color: var(--positive); }
+.order-status--cancelled       { background: rgba(139, 148, 158, 0.15); color: #8b949e; }
+.order-status--rejected        { background: rgba(248,  81,  73, 0.15); color: var(--negative); }
+
+/* ── Filter bar ──────────────────────────────────────── */
+
+.orders-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.orders-filters .order-status {
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+}
+
+.orders-filters .order-status:hover {
+  opacity: 0.75;
+}
+
+.orders-filters .order-status.filter-inactive {
+  opacity: 0.3;
+}
+
+.filter-clear {
+  margin-left: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.filter-clear:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+/* ── Cancel button ───────────────────────────────────── */
+
+.col-action {
+  width: 1px;
+  white-space: nowrap;
+  padding-right: 12px;
+}
+
+.btn-cancel {
+  padding: 2px 8px;
+  border: 1px solid rgba(248, 81, 73, 0.4);
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--negative);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.btn-cancel:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.1);
+  border-color: var(--negative);
+}
+
+.btn-cancel:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Rejection tooltip ───────────────────────────────── */
+
+.order-rejection {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--negative);
+  cursor: help;
+  opacity: 0.8;
+}
