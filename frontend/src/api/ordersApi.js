@@ -1,20 +1,35 @@
 import { getToken } from './client';
 
-const ORDERS_BASE_URL = process.env.REACT_APP_ORDERS_API_URL ?? 'http://localhost:8082';
+const ORDERS_BASE_URL = process.env.REACT_APP_ORDERS_API_URL ?? '';
 
-export async function placeOrder(req) {
+async function ordersRequest(path, options = {}) {
   const token = await getToken();
-  const response = await fetch(`${ORDERS_BASE_URL}/api/orders`, {
-    method: 'POST',
+  const response = await fetch(`${ORDERS_BASE_URL}${path}`, {
+    ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...options.headers,
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(req),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.message ?? `HTTP ${response.status}`);
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
+}
+
+export async function getOrders(accountId) {
+  return ordersRequest(`/api/orders?accountId=${accountId}`);
+}
+
+export async function placeOrder(req) {
+  return ordersRequest('/api/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+export async function cancelOrder(orderId) {
+  return ordersRequest(`/api/orders/${orderId}`, { method: 'DELETE' });
 }

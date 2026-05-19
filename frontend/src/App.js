@@ -4,6 +4,7 @@ import { InteractionStatus } from '@azure/msal-browser';
 import MarketDataTable from './components/MarketDataTable';
 import AccountSelector from './components/AccountSelector';
 import PortfolioPage from './components/PortfolioPage';
+import OrdersPage from './components/OrdersPage';
 import useMarketStatus from './hooks/useMarketStatus';
 import { loginRequest } from './auth/msalConfig';
 import './styles/layout.css';
@@ -103,6 +104,10 @@ function App() {
 
           {activePage === 'portfolio' && (
             <PortfolioPage selectedAccountId={selectedAccountId} />
+          )}
+
+          {activePage === 'orders' && (
+            <OrdersPage selectedAccountId={selectedAccountId} />
           )}
         </main>
 
