@@ -29,7 +29,8 @@ variable "acr_password" {
 }
 
 variable "target_port" {
-  type = number
+  type    = number
+  default = null
 }
 
 variable "max_replicas" {
@@ -40,6 +41,11 @@ variable "max_replicas" {
 variable "transport" {
   type    = string
   default = "http"
+}
+
+variable "enable_ingress" {
+  type    = bool
+  default = true
 }
 
 variable "extra_secrets" {

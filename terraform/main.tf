@@ -326,3 +326,31 @@ module "risk_service" {
     local.common_env_vars
   )
 }
+
+# Kafka-only service — no HTTP server, so ingress is disabled.
+module "execution_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-exec-svc"
+  container_name = "execution-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  acr_server     = local.acr.server
+  acr_username   = local.acr.username
+  acr_password   = local.acr.password
+  enable_ingress = false
+
+  extra_secrets = [
+    { name = "redis-password",   value = var.redis_password           },
+    { name = "kafka-api-key",    value = var.kafka_cluster_api_key    },
+    { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
+  ]
+
+  env_vars = concat(
+    [
+      { name = "REDIS_PASSWORD",           secret_name = "redis-password"   },
+      { name = "KAFKA_CLUSTER_API_KEY",    secret_name = "kafka-api-key"    },
+      { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
+    ],
+    local.common_env_vars
+  )
+}

@@ -11,6 +11,41 @@ permissions:
   contents: read
 
 jobs:
+  paths-filter:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      marketdata: ${{ steps.filter.outputs.marketdata }}
+      accountservice: ${{ steps.filter.outputs.accountservice }}
+      orderservice: ${{ steps.filter.outputs.orderservice }}
+      riskservice: ${{ steps.filter.outputs.riskservice }}
+      executionservice: ${{ steps.filter.outputs.executionservice }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            marketdata:
+              - 'marketdata/**'
+            accountservice:
+              - 'accountservice/**'
+            orderservice:
+              - 'orderservice/**'
+            riskservice:
+              - 'riskservice/**'
+            executionservice:
+              - 'executionservice/**'
+            frontend:
+              - 'frontend/**'
+            shared:
+              - 'pom.xml'
+              - '.github/workflows/**'
+
   build-and-deploy:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -19,6 +54,12 @@ jobs:
       ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
       ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
       RG: ordermanagerai-prod-rg
+      DEPLOY_MARKETDATA: ${{ inputs.force_all == true || needs.paths-filter.outputs.marketdata == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_ACCOUNTSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.accountservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_ORDERSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.orderservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_RISKSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.riskservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_EXECUTIONSERVICE: ${{ inputs.force_all == true || needs.paths-filter.outputs.executionservice == 'true' || needs.paths-filter.outputs.shared == 'true' }}
+      DEPLOY_FRONTEND: ${{ inputs.force_all == true || needs.paths-filter.outputs.frontend == 'true' || needs.paths-filter.outputs.shared == 'true' }}
       BACKEND_FQDN: ''
       ACCOUNTSERVICE_FQDN: ''
       ORDERSERVICE_FQDN: ''
@@ -28,6 +69,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
+        if: env.DEPLOY_MARKETDATA == 'true' || env.DEPLOY_ACCOUNTSERVICE == 'true' || env.DEPLOY_ORDERSERVICE == 'true' || env.DEPLOY_RISKSERVICE == 'true' || env.DEPLOY_EXECUTIONSERVICE == 'true'
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -48,7 +90,12 @@ jobs:
         run: cd orderservice && mvn clean package -DskipTests -B
 
       - name: Build risk service JAR
+        if: env.DEPLOY_RISKSERVICE == 'true'
         run: cd riskservice && mvn clean package -DskipTests -B
+
+      - name: Build execution service JAR
+        if: env.DEPLOY_EXECUTIONSERVICE == 'true'
+        run: cd executionservice && mvn clean package -DskipTests -B
 
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
@@ -123,10 +170,20 @@ jobs:
           docker push "$TAG_LATEST"
 
       - name: Build and push risk service image
+        if: env.DEPLOY_RISKSERVICE == 'true'
         run: |
           TAG="${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:${{ github.sha }}"
           TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" riskservice/
+          docker push "$TAG"
+          docker push "$TAG_LATEST"
+
+      - name: Build and push execution service image
+        if: env.DEPLOY_EXECUTIONSERVICE == 'true'
+        run: |
+          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-executionservice:${{ github.sha }}"
+          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-executionservice:latest"
+          docker build -t "$TAG" -t "$TAG_LATEST" executionservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
@@ -190,11 +247,20 @@ jobs:
             --target-port 8082
 
       - name: Deploy risk service
+        if: env.DEPLOY_RISKSERVICE == 'true'
         run: |
           az containerapp update \
             --name ordermanagerai-prod-risk-svc \
             --resource-group "$RG" \
             --image "${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:${{ github.sha }}"
+
+      - name: Deploy execution service
+        if: env.DEPLOY_EXECUTIONSERVICE == 'true'
+        run: |
+          az containerapp update \
+            --name ordermanagerai-prod-exec-svc \
+            --resource-group "$RG" \
+            --image "${ACR_LOGIN_SERVER}/ordermanagerai-executionservice:${{ github.sha }}"
 
       - name: Smoke test
         run: |
@@ -226,4 +292,7 @@ jobs:
           # is on a separate internal port and not reachable via the external FQDN.
           # gRPC availability is validated end-to-end by the order service smoke test.
           echo "ℹ️ Risk service deployed (gRPC ingress — no HTTP health endpoint on external FQDN)"
+          # Execution service has no HTTP ingress — it is a pure Kafka consumer/producer.
+          # Liveness is observable via consumer-group lag on the executionservice group in Confluent Cloud.
+          echo "ℹ️ Execution service deployed (no HTTP ingress — monitor via Kafka consumer-group lag)"
           exit $FAILED
