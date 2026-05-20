@@ -5,21 +5,18 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.5</version>
-        <relativePath/>
+        <groupId>com.juzo.ai.ordermanager</groupId>
+        <artifactId>ordermanager-ai</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
+    <artifactId>executionservice</artifactId>
+    <packaging>jar</packaging>
+
     <properties>
-        <java.version>25</java.version>
         <disruptor.version>4.0.0</disruptor.version>
     </properties>
-
-    <groupId>com.juzo.ai.ordermanager</groupId>
-    <artifactId>executionservice</artifactId>
-    <version>1.0.0</version>
-    <packaging>jar</packaging>
 
     <dependencies>
         <!-- Kafka — order.created consumer + execution.report producer -->
