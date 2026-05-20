@@ -5,24 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.5</version>
-        <relativePath/>
+        <groupId>com.juzo.ai.ordermanager</groupId>
+        <artifactId>ordermanager-ai</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <properties>
-        <java.version>25</java.version>
-        <testcontainers.version>1.20.1</testcontainers.version>
-        <grpc.version>1.62.2</grpc.version>
-        <protobuf.version>3.25.3</protobuf.version>
-    </properties>
-
-    <groupId>com.juzo.ai.ordermanager</groupId>
     <artifactId>orderservice</artifactId>
-    <version>1.0.0</version>
     <packaging>jar</packaging>
-
 
     <dependencies>
         <dependency>
@@ -88,17 +78,14 @@
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-netty-shaded</artifactId>
-            <version>${grpc.version}</version>
         </dependency>
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-protobuf</artifactId>
-            <version>${grpc.version}</version>
         </dependency>
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-stub</artifactId>
-            <version>${grpc.version}</version>
         </dependency>
         <dependency>
             <groupId>com.google.protobuf</groupId>
