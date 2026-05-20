@@ -49,13 +49,16 @@ resource "azurerm_container_app" "this" {
     }
   }
 
-  ingress {
-    external_enabled = true
-    target_port      = var.target_port
-    transport        = var.transport
-    traffic_weight {
-      percentage      = 100
-      latest_revision = true
+  dynamic "ingress" {
+    for_each = var.enable_ingress ? [1] : []
+    content {
+      external_enabled = true
+      target_port      = var.target_port
+      transport        = var.transport
+      traffic_weight {
+        percentage      = 100
+        latest_revision = true
+      }
     }
   }
 }
