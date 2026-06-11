@@ -15,15 +15,15 @@ variable "resource_group" {
   type = string
 }
 
-variable "acr_server" {
+variable "registry_server" {
   type = string
 }
 
-variable "acr_username" {
+variable "registry_username" {
   type = string
 }
 
-variable "acr_password" {
+variable "registry_password" {
   type      = string
   sensitive = true
 }

@@ -35,13 +35,6 @@ locals {
   # Derived from the environment default_domain to avoid a circular dependency.
   frontend_origin = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
 
-  # ACR credentials passed to every module call.
-  acr = {
-    server   = azurerm_container_registry.acr.login_server
-    username = azurerm_container_registry.acr.admin_username
-    password = azurerm_container_registry.acr.admin_password
-  }
-
   # Env vars shared by every backend service.
   common_env_vars = [
     { name = "AAD_TENANT_ID",        value = data.azurerm_client_config.current.tenant_id },
@@ -168,15 +161,6 @@ resource "azurerm_key_vault_secret" "neon_db_password" {
   depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
-# ── Container Registry ──────────────────────────────────
-resource "azurerm_container_registry" "acr" {
-  name                = "${var.project_name}${var.environment}acr${local.sub_suffix}"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  sku                 = "Basic"
-  admin_enabled       = true
-}
-
 # ── Container App Environment ────────────────────────────
 # Shared networking/logging layer. Consumption plan = pay-per-use.
 resource "azurerm_container_app_environment" "main" {
@@ -193,9 +177,9 @@ module "marketdata" {
   container_name = "marketdata"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  acr_server     = local.acr.server
-  acr_username   = local.acr.username
-  acr_password   = local.acr.password
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
   target_port    = 8080
   max_replicas   = 1
 
@@ -225,9 +209,9 @@ module "frontend" {
   container_name = "frontend"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  acr_server     = local.acr.server
-  acr_username   = local.acr.username
-  acr_password   = local.acr.password
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
   target_port    = 80
   max_replicas   = 1
 
@@ -242,9 +226,9 @@ module "account_service" {
   container_name = "account-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  acr_server     = local.acr.server
-  acr_username   = local.acr.username
-  acr_password   = local.acr.password
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
   target_port    = 8081
 
   extra_secrets = [
@@ -267,9 +251,9 @@ module "order_service" {
   container_name = "order-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  acr_server     = local.acr.server
-  acr_username   = local.acr.username
-  acr_password   = local.acr.password
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
   target_port    = 8082
 
   extra_secrets = [
@@ -305,9 +289,9 @@ module "risk_service" {
   container_name = "risk-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  acr_server     = local.acr.server
-  acr_username   = local.acr.username
-  acr_password   = local.acr.password
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
   target_port    = 9090
   transport      = "http2"
 
@@ -334,9 +318,9 @@ module "execution_service" {
   container_name = "execution-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  acr_server     = local.acr.server
-  acr_username   = local.acr.username
-  acr_password   = local.acr.password
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
   enable_ingress = false
 
   extra_secrets = [
