@@ -16,7 +16,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
-      GHCR_PREFIX: ghcr.io/${{ github.repository_owner }}
       RG: ordermanagerai-prod-rg
       BACKEND_FQDN: ''
       ACCOUNTSERVICE_FQDN: ''
@@ -25,6 +24,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set GHCR prefix (lowercase owner required by ghcr.io)
+        run: echo "GHCR_PREFIX=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - uses: actions/setup-java@v4
         with:
