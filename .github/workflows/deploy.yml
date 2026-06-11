@@ -9,15 +9,14 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   build-and-deploy:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
-      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
-      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
-      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      GHCR_PREFIX: ghcr.io/${{ github.repository_owner }}
       RG: ordermanagerai-prod-rg
       BACKEND_FQDN: ''
       ACCOUNTSERVICE_FQDN: ''
@@ -96,47 +95,47 @@ jobs:
           echo "RISKSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
 
       # Docker build & push
-      - name: Login to ACR
+      - name: Login to GitHub Container Registry
         run: |
-          echo "$ACR_PASSWORD" | docker login "$ACR_LOGIN_SERVER" \
-            -u "$ACR_USERNAME" --password-stdin
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
 
       - name: Build and push marketdata image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:latest"
+          TAG="${GHCR_PREFIX}/ordermanagerai-marketdata:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-marketdata:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" marketdata/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
       - name: Build and push account service image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:latest"
+          TAG="${GHCR_PREFIX}/ordermanagerai-accountservice:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-accountservice:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" accountservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
       - name: Build and push order service image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:latest"
+          TAG="${GHCR_PREFIX}/ordermanagerai-orderservice:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-orderservice:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" orderservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
       - name: Build and push risk service image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:latest"
+          TAG="${GHCR_PREFIX}/ordermanagerai-riskservice:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-riskservice:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" riskservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
       - name: Build and push execution service image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-executionservice:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-executionservice:latest"
+          TAG="${GHCR_PREFIX}/ordermanagerai-executionservice:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-executionservice:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" executionservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
@@ -145,8 +144,8 @@ jobs:
       # above — no hardcoded URLs needed.
       - name: Build and push frontend image
         run: |
-          TAG="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
-          TAG_LATEST="${ACR_LOGIN_SERVER}/ordermanagerai-frontend:latest"
+          TAG="${GHCR_PREFIX}/ordermanagerai-frontend:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-frontend:latest"
           docker build \
             --build-arg REACT_APP_API_URL="https://${{ env.BACKEND_FQDN }}" \
             --build-arg REACT_APP_WS_BASE="wss://${{ env.BACKEND_FQDN }}" \
@@ -165,7 +164,7 @@ jobs:
           az containerapp update \
             --name ordermanagerai-prod-marketdata \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-marketdata:${{ github.sha }}"
+            --image "${GHCR_PREFIX}/ordermanagerai-marketdata:${{ github.sha }}"
           az containerapp ingress update \
             --name ordermanagerai-prod-marketdata \
             --resource-group "$RG" \
@@ -176,14 +175,14 @@ jobs:
           az containerapp update \
             --name ordermanagerai-prod-frontend \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-frontend:${{ github.sha }}"
+            --image "${GHCR_PREFIX}/ordermanagerai-frontend:${{ github.sha }}"
 
       - name: Deploy account service
         run: |
           az containerapp update \
             --name ordermanagerai-prod-acct-svc \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-accountservice:${{ github.sha }}"
+            --image "${GHCR_PREFIX}/ordermanagerai-accountservice:${{ github.sha }}"
           az containerapp ingress update \
             --name ordermanagerai-prod-acct-svc \
             --resource-group "$RG" \
@@ -194,7 +193,7 @@ jobs:
           az containerapp update \
             --name ordermanagerai-prod-order-svc \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-orderservice:${{ github.sha }}"
+            --image "${GHCR_PREFIX}/ordermanagerai-orderservice:${{ github.sha }}"
           az containerapp ingress update \
             --name ordermanagerai-prod-order-svc \
             --resource-group "$RG" \
@@ -205,14 +204,14 @@ jobs:
           az containerapp update \
             --name ordermanagerai-prod-risk-svc \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-riskservice:${{ github.sha }}"
+            --image "${GHCR_PREFIX}/ordermanagerai-riskservice:${{ github.sha }}"
 
       - name: Deploy execution service
         run: |
           az containerapp update \
             --name ordermanagerai-prod-exec-svc \
             --resource-group "$RG" \
-            --image "${ACR_LOGIN_SERVER}/ordermanagerai-executionservice:${{ github.sha }}"
+            --image "${GHCR_PREFIX}/ordermanagerai-executionservice:${{ github.sha }}"
 
       - name: Smoke test
         run: |
