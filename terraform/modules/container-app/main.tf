@@ -10,14 +10,14 @@ resource "azurerm_container_app" "this" {
   }
 
   registry {
-    server               = var.acr_server
-    username             = var.acr_username
-    password_secret_name = "acr-password"
+    server               = var.registry_server
+    username             = var.registry_username
+    password_secret_name = "registry-password"
   }
 
   secret {
-    name  = "acr-password"
-    value = var.acr_password
+    name  = "registry-password"
+    value = var.registry_password
   }
 
   dynamic "secret" {
