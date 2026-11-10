@@ -80,6 +80,17 @@ resource "azuread_application" "app" {
       type                       = "Admin"
       value                      = "internal.read"
     }
+
+    # Required by the MCP server: lets an AI agent trade on behalf of the signed-in advisor.
+    # Admin consent is required because the agent can place and cancel orders.
+    oauth2_permission_scope {
+      admin_consent_description  = "Allow AI agents to read prices and place or cancel orders on behalf of the signed-in advisor"
+      admin_consent_display_name = "mcp.trade"
+      enabled                    = true
+      id                         = "00000000-0000-0000-0000-000000000003"
+      type                       = "Admin"
+      value                      = "mcp.trade"
+    }
   }
 
   # SPA platform — Entra ID will issue tokens directly to this origin
@@ -336,5 +347,30 @@ module "execution_service" {
       { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars
+  )
+}
+
+# MCP server for AI trading agents — stateless; forwards the caller's token to order and market data services.
+module "mcp_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-mcp-svc"
+  container_name = "mcp-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
+  target_port    = 8084
+
+  env_vars = concat(
+    local.common_env_vars,
+    [
+      { name = "ORDER_SERVICE_URL",
+        value = "https://${local.prefix}-order-svc.${azurerm_container_app_environment.main.default_domain}" },
+      { name = "MARKETDATA_URL",
+        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
+      { name = "MCP_PUBLIC_URL",
+        value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}" },
+    ]
   )
 }

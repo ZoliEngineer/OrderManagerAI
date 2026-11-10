@@ -36,6 +36,10 @@ The target design (including services not yet built) is described in [requiremen
             ▼
      Execution Service (no HTTP) ── Kafka consumer → LMAX Disruptor ring buffer
                                     → per-symbol matching engine (limit order book)
+
+  AI agent (MCP client) ──Streamable HTTP + JWT (mcp.trade)──▶ MCP Service :8084
+                                    ├─ REST (caller's token) ─▶ Order Service  POST/DELETE /api/orders
+                                    └─ REST (caller's token) ─▶ Market Data    GET /api/marketdata
 ```
 
 ### Communication styles
@@ -46,6 +50,7 @@ The target design (including services not yet built) is described in [requiremen
 | Sync, service-to-service | gRPC/Protobuf over HTTP/2 | Order → Risk | Low latency, typed contract ([proto/risk.proto](../proto/risk.proto)), deadlines |
 | Async events | Kafka (Confluent Cloud) | Prices → Risk; Orders → Execution | Decoupling, per-key ordering, replayable log |
 | Real-time fan-out | Redis Pub/Sub → WebSocket | Prices → browser | Fire-and-forget broadcast to many sockets |
+| AI tool calls | MCP (JSON-RPC over Streamable HTTP) + JWT | AI agent → MCP Service → Order / Market Data | Standard tool protocol for LLM agents; delegates to the existing REST APIs |
 | Shared fast state | Redis key-value | Account → Risk (buying power) | Sub-millisecond reads on the risk path |
 
 ## Services
@@ -96,6 +101,17 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 - **Order book:** bids/asks in price-sorted `TreeMap`s with FIFO `ArrayDeque`s per price level (price-time priority); O(1) lazy cancellation via an id index.
 - **Why:** the canonical low-latency exchange design — single writer, lock-free, allocation-free hot path, deterministic ordering.
 
+### MCP Service (`mcpservice/`, port 8084) — Spring MVC + Spring AI MCP server
+- **Role:** exposes trading to AI agents as [MCP](https://modelcontextprotocol.io) tools over Streamable HTTP at `/mcp`. Stateless — no database, Kafka or Redis; all business rules stay in the downstream services.
+- **Tools** (`@McpTool`, with read-only/destructive hints):
+  - `get_market_prices(tickers?)` → `GET /api/marketdata` on Market Data, filtered by ticker.
+  - `place_order(accountId, ticker, side, type, quantity, limitPrice?)` → `POST /api/orders`. A risk rejection (HTTP 422) is returned as `accepted=false` + reason, not as a tool error.
+  - `cancel_order(orderId)` → `DELETE /api/orders/{id}`; 404/409 come back as `cancelled=false` with an explanation.
+- **Auth (delegated):** the agent obtains an Entra ID token *on behalf of an advisor* with the `mcp.trade` scope (admin consent). `/mcp` requires `SCOPE_mcp.trade`. The token's `sub` is the advisor, so the Order Service's ownership checks and Postgres RLS apply unchanged. Spring Security serves the RFC 9728 metadata at `/.well-known/oauth-protected-resource` and advertises it in `WWW-Authenticate` on 401s, as the MCP authorization spec requires. Entra ID has no dynamic client registration, so agents use a pre-registered client ID.
+- **Token forwarding:** [McpTransportConfig.java](../mcpservice/src/main/java/com/juzo/ai/ordermanager/mcp/config/McpTransportConfig.java) replaces the auto-configured transport with one whose context extractor copies the validated JWT into the MCP transport context; tools read the token from there (not from the thread-local `SecurityContext`) and forward it as `Authorization: Bearer`.
+- **Guardrails:** `mcp.trading.max-quantity-per-order` and `mcp.trading.max-notional-per-order` (limit price, or current market price for market orders) reject oversized agent orders before they reach the Order Service. Every mutating call is logged on the `audit.mcp` logger (subject, agent client id, args, outcome).
+- **Why a separate service:** one endpoint for agents, existing services untouched, and a natural place for agent-specific policy (scopes, limits, audit).
+
 ### Frontend (`frontend/`) — React 18 + MSAL
 - **Auth:** `src/auth/msalConfig.js` configures `@azure/msal-browser` / `@azure/msal-react` (tenant, client ID, API scope from `REACT_APP_*` env vars; session-storage cache). `src/api/client.js` acquires tokens silently and injects `Authorization: Bearer` on `fetch` calls.
 - **API modules:** `marketDataApi.js`, `marketDataWebSocket.js` (sends the auth frame on open), `accountApi.js`, `ordersApi.js`.
@@ -136,3 +152,4 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 - Risk does not validate the forwarded bearer token (`grpc.server.security.enabled=false`), while its ingress is external.
 - Placing an order does not update `reserved_balance` or the Redis buying-power key, so buying power can be double-spent across orders.
 - CI does not run tests for `executionservice` (it has none yet).
+- `POST /api/orders` has no client order id, so an agent retrying `place_order` after a timeout can create a duplicate order (the tool description warns against blind retries).
