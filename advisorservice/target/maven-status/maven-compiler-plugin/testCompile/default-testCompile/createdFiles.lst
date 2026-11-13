@@ -1,0 +1,14 @@
+com/juzo/ai/ordermanager/advisor/mcp/HttpMcpToolGatewayTest$1.class
+com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest$FakeMcp$Call.class
+com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest$FakeMcp.class
+com/juzo/ai/ordermanager/advisor/web/ChatControllerSecurityTest$TestStore.class
+com/juzo/ai/ordermanager/advisor/web/ChatControllerSecurityTest$StoreConfig.class
+com/juzo/ai/ordermanager/advisor/web/ChatControllerSecurityTest.class
+com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest$Event.class
+com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest$MutableClock.class
+com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest.class
+com/juzo/ai/ordermanager/advisor/agent/AnthropicClaudeGatewayTest$1.class
+com/juzo/ai/ordermanager/advisor/agent/AnthropicClaudeGatewayTest.class
+com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest$FakeClaude.class
+com/juzo/ai/ordermanager/advisor/agent/ToolCatalogTest.class
+com/juzo/ai/ordermanager/advisor/mcp/HttpMcpToolGatewayTest.class

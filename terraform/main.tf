@@ -98,6 +98,9 @@ resource "azuread_application" "app" {
     redirect_uris = [
       "http://localhost:3000/",
       "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}/",
+      # Trading advisor chat page (served by advisorservice itself)
+      "http://localhost:8085/",
+      "https://${local.prefix}-advisor-svc.${azurerm_container_app_environment.main.default_domain}/",
     ]
   }
 
@@ -146,6 +149,14 @@ resource "azurerm_key_vault_secret" "kafka_api_key" {
 resource "azurerm_key_vault_secret" "kafka_api_secret" {
   name         = "KAFKA-CLUSTER-API-SECRET"
   value        = var.kafka_cluster_api_secret
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
+resource "azurerm_key_vault_secret" "anthropic_api_key" {
+  count        = var.anthropic_api_key != "" ? 1 : 0
+  name         = "ANTHROPIC-API-KEY"
+  value        = var.anthropic_api_key
   key_vault_id = azurerm_key_vault.main.id
   depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
@@ -372,5 +383,31 @@ module "mcp_service" {
       { name = "MCP_PUBLIC_URL",
         value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}" },
     ]
+  )
+}
+
+# Trading advisor: chat UI + Claude agent loop; trades through the MCP service with the user's token.
+module "advisor_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-advisor-svc"
+  container_name = "advisor-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  registry_server   = "ghcr.io"
+  registry_username = var.ghcr_username
+  registry_password = var.ghcr_token
+  target_port    = 8085
+
+  extra_secrets = var.anthropic_api_key != "" ? [
+    { name = "anthropic-api-key", value = var.anthropic_api_key },
+  ] : []
+
+  env_vars = concat(
+    local.common_env_vars,
+    [
+      { name = "MCP_SERVER_URL",
+        value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}/mcp" },
+    ],
+    var.anthropic_api_key != "" ? [{ name = "ANTHROPIC_API_KEY", secret_name = "anthropic-api-key" }] : []
   )
 }

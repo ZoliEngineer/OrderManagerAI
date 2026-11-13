@@ -22,6 +22,12 @@ variable "kafka_cluster_api_secret" {
   sensitive = true
 }
 
+variable "anthropic_api_key" {
+  description = "Claude API key for the trading advisor service."
+  sensitive   = true
+  default     = ""
+}
+
 variable "finnhub_api_key" {
   sensitive = true
   default   = ""

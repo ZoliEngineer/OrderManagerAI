@@ -24,6 +24,7 @@
         <module>riskservice</module>
         <module>executionservice</module>
         <module>mcpservice</module>
+        <module>advisorservice</module>
     </modules>
 
     <properties>

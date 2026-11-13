@@ -37,6 +37,9 @@ The target design (including services not yet built) is described in [requiremen
      Execution Service (no HTTP) ── Kafka consumer → LMAX Disruptor ring buffer
                                     → per-symbol matching engine (limit order book)
 
+  Advisor chat page ──REST + SSE, JWT (mcp.trade)──▶ Advisor Service :8085 ──Claude API (web_search, tool use)
+                                                           │ user approves every order in the chat
+                                                           ▼
   AI agent (MCP client) ──Streamable HTTP + JWT (mcp.trade)──▶ MCP Service :8084
                                     ├─ REST (caller's token) ─▶ Order Service  POST/DELETE /api/orders
                                     └─ REST (caller's token) ─▶ Market Data    GET /api/marketdata
@@ -50,7 +53,8 @@ The target design (including services not yet built) is described in [requiremen
 | Sync, service-to-service | gRPC/Protobuf over HTTP/2 | Order → Risk | Low latency, typed contract ([proto/risk.proto](../proto/risk.proto)), deadlines |
 | Async events | Kafka (Confluent Cloud) | Prices → Risk; Orders → Execution | Decoupling, per-key ordering, replayable log |
 | Real-time fan-out | Redis Pub/Sub → WebSocket | Prices → browser | Fire-and-forget broadcast to many sockets |
-| AI tool calls | MCP (JSON-RPC over Streamable HTTP) + JWT | AI agent → MCP Service → Order / Market Data | Standard tool protocol for LLM agents; delegates to the existing REST APIs |
+| AI tool calls | MCP (JSON-RPC over Streamable HTTP) + JWT | AI agent / Advisor Service → MCP Service → Order / Market Data | Standard tool protocol for LLM agents; delegates to the existing REST APIs |
+| Chat streaming | Server-Sent Events over `fetch` + JWT | Browser → Advisor Service | One-way token/event stream per turn; `fetch` (not `EventSource`) so the token stays in the `Authorization` header |
 | Shared fast state | Redis key-value | Account → Risk (buying power) | Sub-millisecond reads on the risk path |
 
 ## Services
@@ -112,6 +116,15 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 - **Guardrails:** `mcp.trading.max-quantity-per-order` and `mcp.trading.max-notional-per-order` (limit price, or current market price for market orders) reject oversized agent orders before they reach the Order Service. Every mutating call is logged on the `audit.mcp` logger (subject, agent client id, args, outcome).
 - **Why a separate service:** one endpoint for agents, existing services untouched, and a natural place for agent-specific policy (scopes, limits, audit).
 
+### Advisor Service (`advisorservice/`, port 8085) — Spring MVC + Anthropic Java SDK + MCP client
+- **Role:** a standalone AI trading advisor. It serves its own chat page, runs a Claude agent loop, and trades **only through the MCP Service**, so every guardrail and audit log of `mcpservice` still applies.
+- **UI:** static `index.html` / `app.js` / `styles.css` in `src/main/resources/static` (MSAL.js, `marked`, DOMPurify from a CDN, no Node build). Sign-in settings come from the public `GET /config.json`. The trade account id is a plain text box and is sent with each message as `Active trade account: <uuid>`.
+- **Endpoints:** `POST /api/conversations`; `POST /api/conversations/{id}/messages` and `POST /api/conversations/{id}/approvals` both answer with an SSE stream of `text_delta`, `thinking`, `tool_activity`, `approval_required`, `error` and `done` events. `/api/**` requires `SCOPE_mcp.trade`.
+- **Agent loop** ([AdvisorAgent.java](../advisorservice/src/main/java/com/juzo/ai/ordermanager/advisor/agent/AdvisorAgent.java)): a manual tool-use loop with adaptive thinking, streaming and a cached system prompt. To keep this experimental feature cheap it defaults to `claude-sonnet-5-5` at `low` effort, the cheapest model that supports both `web_search_20260209` (dynamic filtering) and the server-side refusal fallback. Model, effort, web-search variant and fallback can each be changed through `ADVISOR_*` env vars: Haiku 5.5 needs the basic `web_search_20250305` and no fallback; Opus 5.5 at `high` gives deeper analysis. Tools are the MCP Service's tools (listed at runtime and converted into Claude tool definitions) plus Claude's server-side web search.
+- **Human in the loop:** a tool runs straight away only when its MCP annotation says `readOnlyHint=true` (`get_market_prices`). Any other call (`place_order`, `cancel_order`, and any mutating tool added later) pauses the turn and shows an approval card. Approved calls run with the user's current token. Rejected, expired (10 min) or superseded calls go back to Claude as `is_error` tool results. Decisions and executions are logged on the `audit.advisor` logger.
+- **Auth:** the browser's Entra ID token (`api://<client>/mcp.trade`) is validated here and forwarded to the MCP Service, so `sub`, ownership checks and Postgres RLS apply unchanged. The Claude API key stays on the server (`ANTHROPIC_API_KEY`).
+- **State:** conversations are held in memory per user (`sub`) and evicted after 2h idle. A restart loses them.
+
 ### Frontend (`frontend/`) — React 18 + MSAL
 - **Auth:** `src/auth/msalConfig.js` configures `@azure/msal-browser` / `@azure/msal-react` (tenant, client ID, API scope from `REACT_APP_*` env vars; session-storage cache). `src/api/client.js` acquires tokens silently and injects `Authorization: Bearer` on `fetch` calls.
 - **API modules:** `marketDataApi.js`, `marketDataWebSocket.js` (sends the auth frame on open), `accountApi.js`, `ordersApi.js`.
@@ -140,7 +153,7 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 Runtime config for each service lives in `<service>/src/main/resources/application.properties`.
 
 ## CI/CD (`.github/workflows/`)
-- **ci.yml** — on every push/PR; uses a paths filter to run `mvn clean verify -B` only for changed services (marketdata, accountservice, orderservice, riskservice) and `npm ci && npm test` for the frontend; publishes test reports.
+- **ci.yml** — on every push/PR; uses a paths filter to run `mvn clean verify -B` only for changed services (marketdata, accountservice, orderservice, riskservice, mcpservice, advisorservice) and `npm ci && npm test` for the frontend; publishes test reports.
 - **deploy.yml** — runs after CI succeeds on `main` (or manually): builds all JARs and the frontend, queries live Container App FQDNs (baked into the frontend image), builds and pushes images to GHCR tagged `<sha>` + `latest`, then `az containerapp update` per service, followed by `/actuator/health` smoke tests against marketdata, account and order services (Risk exposes only gRPC externally).
 - **ai-code-review.yml** — Claude API reviews PR diffs, posts a comment, and auto-merges if approved.
 - **ai-issue-handler.yml** — Claude API turns issues labelled `bug` or `enhancement` into a feature branch + PR, validated by tests.
@@ -153,3 +166,4 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 - Placing an order does not update `reserved_balance` or the Redis buying-power key, so buying power can be double-spent across orders.
 - CI does not run tests for `executionservice` (it has none yet).
 - `POST /api/orders` has no client order id, so an agent retrying `place_order` after a timeout can create a duplicate order (the tool description warns against blind retries).
+- Advisor conversations are in memory only (lost on restart, single replica), and the trade account id is typed by hand instead of being picked from the Account Service.

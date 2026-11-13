@@ -22,6 +22,7 @@ jobs:
       ORDERSERVICE_FQDN: ''
       RISKSERVICE_FQDN: ''
       MCPSERVICE_FQDN: ''
+      ADVISORSERVICE_FQDN: ''
 
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +58,9 @@ jobs:
 
       - name: Build MCP service JAR
         run: cd mcpservice && mvn clean package -DskipTests -B
+
+      - name: Build advisor service JAR
+        run: cd advisorservice && mvn clean package -DskipTests -B
 
       - name: Build frontend
         run: cd frontend && npm ci && npm run build
@@ -107,6 +111,14 @@ jobs:
             --resource-group "$RG" \
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "MCPSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+
+      - name: Get advisor service FQDN
+        run: |
+          FQDN=$(az containerapp show \
+            --name ordermanagerai-prod-advisor-svc \
+            --resource-group "$RG" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "ADVISORSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
 
       # Docker build & push
       - name: Login to GitHub Container Registry
@@ -159,6 +171,14 @@ jobs:
           TAG="${GHCR_PREFIX}/ordermanagerai-mcpservice:${{ github.sha }}"
           TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-mcpservice:latest"
           docker build -t "$TAG" -t "$TAG_LATEST" mcpservice/
+          docker push "$TAG"
+          docker push "$TAG_LATEST"
+
+      - name: Build and push advisor service image
+        run: |
+          TAG="${GHCR_PREFIX}/ordermanagerai-advisorservice:${{ github.sha }}"
+          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-advisorservice:latest"
+          docker build -t "$TAG" -t "$TAG_LATEST" advisorservice/
           docker push "$TAG"
           docker push "$TAG_LATEST"
 
@@ -246,6 +266,17 @@ jobs:
             --resource-group "$RG" \
             --target-port 8084
 
+      - name: Deploy advisor service
+        run: |
+          az containerapp update \
+            --name ordermanagerai-prod-advisor-svc \
+            --resource-group "$RG" \
+            --image "${GHCR_PREFIX}/ordermanagerai-advisorservice:${{ github.sha }}"
+          az containerapp ingress update \
+            --name ordermanagerai-prod-advisor-svc \
+            --resource-group "$RG" \
+            --target-port 8085
+
       - name: Smoke test
         run: |
           echo "Waiting 30s for deployment to stabilize..."
@@ -278,6 +309,13 @@ jobs:
             FAILED=1
           else
             echo "✅ MCP service smoke test passed"
+          fi
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ADVISORSERVICE_FQDN/actuator/health")
+          if [ "$STATUS" -ne 200 ]; then
+            echo "❌ Advisor service smoke test failed (HTTP $STATUS)"
+            FAILED=1
+          else
+            echo "✅ Advisor service smoke test passed"
           fi
           # Risk service ingress targets the gRPC port (9090/HTTP2); actuator health
           # is on a separate internal port and not reachable via the external FQDN.

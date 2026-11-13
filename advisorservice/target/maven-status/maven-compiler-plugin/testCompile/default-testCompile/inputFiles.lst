@@ -1,0 +1,5 @@
+/home/zoli/Projects/OrderManagerAI/advisorservice/src/test/java/com/juzo/ai/ordermanager/advisor/agent/AdvisorAgentTest.java
+/home/zoli/Projects/OrderManagerAI/advisorservice/src/test/java/com/juzo/ai/ordermanager/advisor/agent/AnthropicClaudeGatewayTest.java
+/home/zoli/Projects/OrderManagerAI/advisorservice/src/test/java/com/juzo/ai/ordermanager/advisor/agent/ToolCatalogTest.java
+/home/zoli/Projects/OrderManagerAI/advisorservice/src/test/java/com/juzo/ai/ordermanager/advisor/mcp/HttpMcpToolGatewayTest.java
+/home/zoli/Projects/OrderManagerAI/advisorservice/src/test/java/com/juzo/ai/ordermanager/advisor/web/ChatControllerSecurityTest.java
