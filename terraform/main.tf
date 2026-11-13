@@ -199,9 +199,6 @@ module "marketdata" {
   container_name = "marketdata"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8080
   max_replicas   = 1
 
@@ -231,9 +228,6 @@ module "frontend" {
   container_name = "frontend"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 80
   max_replicas   = 1
 
@@ -248,9 +242,6 @@ module "account_service" {
   container_name = "account-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8081
 
   extra_secrets = [
@@ -273,9 +264,6 @@ module "order_service" {
   container_name = "order-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8082
 
   extra_secrets = [
@@ -311,9 +299,6 @@ module "risk_service" {
   container_name = "risk-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 9090
   transport      = "http2"
 
@@ -340,9 +325,6 @@ module "execution_service" {
   container_name = "execution-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   enable_ingress = false
 
   extra_secrets = [
@@ -368,9 +350,6 @@ module "mcp_service" {
   container_name = "mcp-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8084
 
   env_vars = concat(
@@ -393,9 +372,6 @@ module "advisor_service" {
   container_name = "advisor-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8085
 
   extra_secrets = var.anthropic_api_key != "" ? [

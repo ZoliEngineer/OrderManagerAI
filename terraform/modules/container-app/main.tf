@@ -9,15 +9,23 @@ resource "azurerm_container_app" "this" {
     ignore_changes = [template[0].container[0].image]
   }
 
-  registry {
-    server               = var.registry_server
-    username             = var.registry_username
-    password_secret_name = "registry-password"
+  # Images are public on GHCR, so no pull credentials are needed. Set
+  # registry_username to a non-empty value to pull from a private registry.
+  dynamic "registry" {
+    for_each = var.registry_username != "" ? [1] : []
+    content {
+      server               = var.registry_server
+      username             = var.registry_username
+      password_secret_name = "registry-password"
+    }
   }
 
-  secret {
-    name  = "registry-password"
-    value = var.registry_password
+  dynamic "secret" {
+    for_each = var.registry_username != "" ? [1] : []
+    content {
+      name  = "registry-password"
+      value = var.registry_password
+    }
   }
 
   dynamic "secret" {

@@ -16,16 +16,19 @@ variable "resource_group" {
 }
 
 variable "registry_server" {
-  type = string
+  type    = string
+  default = "ghcr.io"
 }
 
 variable "registry_username" {
-  type = string
+  type    = string
+  default = ""
 }
 
 variable "registry_password" {
   type      = string
   sensitive = true
+  default   = ""
 }
 
 variable "target_port" {
