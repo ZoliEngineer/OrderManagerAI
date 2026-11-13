@@ -20,6 +20,9 @@ cd marketdata && mvn clean verify -B
 
 # Run locally (requires .env with REDIS_PASSWORD, KAFKA credentials)
 cd marketdata && export $(cat ../.env | xargs) && mvn spring-boot:run
+
+# Trading advisor chat UI on http://localhost:8085 (requires ANTHROPIC_API_KEY in .env and mcpservice on :8084)
+cd advisorservice && export $(cat ../.env | xargs) && mvn spring-boot:run
 ```
 
 

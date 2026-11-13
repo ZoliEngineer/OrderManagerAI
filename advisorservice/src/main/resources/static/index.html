@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Advisor</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M7 22l6-7 5 4 7-9' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@5.9.0/lib/msal-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <h1>Trading Advisor</h1>
+        <p class="subtitle">Research, strategy and trades — every order needs your approval</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="account">
+        <span>Trade account</span>
+        <input id="accountId" type="text" placeholder="Account ID (UUID)" autocomplete="off" spellcheck="false">
+      </label>
+      <button id="newChat" class="ghost" type="button" title="Start a new conversation">New chat</button>
+      <button id="authButton" class="ghost" type="button">Sign in</button>
+    </div>
+  </header>
+
+  <main id="transcript" class="transcript" aria-live="polite">
+    <section class="welcome" id="welcome">
+      <h2>What would you like to look into?</h2>
+      <p>The advisor can search the news, read live prices, suggest strategies, and place or cancel orders once you approve them.</p>
+      <div class="suggestions">
+        <button type="button" class="suggestion">What's moving in tech stocks today, and is anything worth buying?</button>
+        <button type="button" class="suggestion">Summarise the latest news on NVDA and suggest a limit order.</button>
+        <button type="button" class="suggestion">Compare AAPL and MSFT for a 5,000 USD position.</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="composer">
+    <form id="composer">
+      <textarea id="input" rows="1" placeholder="Sign in to chat with your advisor" disabled></textarea>
+      <button id="send" type="submit" disabled>Send</button>
+    </form>
+    <p class="disclaimer">AI-generated analysis can be wrong. You are responsible for every trade you approve.</p>
+  </footer>
+</body>
+</html>

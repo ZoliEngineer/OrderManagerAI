@@ -18,6 +18,18 @@ output "risk_service_url" {
   value = "https://${module.risk_service.fqdn}"
 }
 
+output "mcp_server_url" {
+  value = "https://${module.mcp_service.fqdn}/mcp"
+}
+
+output "advisor_url" {
+  value = "https://${module.advisor_service.fqdn}"
+}
+
+output "mcp_scope" {
+  value = "api://${azuread_application.app.client_id}/mcp.trade"
+}
+
 output "key_vault_uri" {
   value = azurerm_key_vault.main.vault_uri
 }

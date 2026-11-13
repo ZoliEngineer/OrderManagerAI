@@ -80,6 +80,17 @@ resource "azuread_application" "app" {
       type                       = "Admin"
       value                      = "internal.read"
     }
+
+    # Required by the MCP server: lets an AI agent trade on behalf of the signed-in advisor.
+    # Admin consent is required because the agent can place and cancel orders.
+    oauth2_permission_scope {
+      admin_consent_description  = "Allow AI agents to read prices and place or cancel orders on behalf of the signed-in advisor"
+      admin_consent_display_name = "mcp.trade"
+      enabled                    = true
+      id                         = "00000000-0000-0000-0000-000000000003"
+      type                       = "Admin"
+      value                      = "mcp.trade"
+    }
   }
 
   # SPA platform — Entra ID will issue tokens directly to this origin
@@ -87,6 +98,9 @@ resource "azuread_application" "app" {
     redirect_uris = [
       "http://localhost:3000/",
       "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}/",
+      # Trading advisor chat page (served by advisorservice itself)
+      "http://localhost:8085/",
+      "https://${local.prefix}-advisor-svc.${azurerm_container_app_environment.main.default_domain}/",
     ]
   }
 
@@ -139,6 +153,14 @@ resource "azurerm_key_vault_secret" "kafka_api_secret" {
   depends_on   = [azurerm_key_vault_access_policy.deployer]
 }
 
+resource "azurerm_key_vault_secret" "anthropic_api_key" {
+  count        = var.anthropic_api_key != "" ? 1 : 0
+  name         = "ANTHROPIC-API-KEY"
+  value        = var.anthropic_api_key
+  key_vault_id = azurerm_key_vault.main.id
+  depends_on   = [azurerm_key_vault_access_policy.deployer]
+}
+
 resource "azurerm_key_vault_secret" "finnhub_api_key" {
   count        = var.finnhub_api_key != "" ? 1 : 0
   name         = "FINNHUB-API-KEY"
@@ -177,9 +199,6 @@ module "marketdata" {
   container_name = "marketdata"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8080
   max_replicas   = 1
 
@@ -209,9 +228,6 @@ module "frontend" {
   container_name = "frontend"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 80
   max_replicas   = 1
 
@@ -226,9 +242,6 @@ module "account_service" {
   container_name = "account-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8081
 
   extra_secrets = [
@@ -251,9 +264,6 @@ module "order_service" {
   container_name = "order-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 8082
 
   extra_secrets = [
@@ -289,9 +299,6 @@ module "risk_service" {
   container_name = "risk-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   target_port    = 9090
   transport      = "http2"
 
@@ -318,9 +325,6 @@ module "execution_service" {
   container_name = "execution-service"
   environment_id = azurerm_container_app_environment.main.id
   resource_group = azurerm_resource_group.main.name
-  registry_server   = "ghcr.io"
-  registry_username = var.ghcr_username
-  registry_password = var.ghcr_token
   enable_ingress = false
 
   extra_secrets = [
@@ -336,5 +340,50 @@ module "execution_service" {
       { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars
+  )
+}
+
+# MCP server for AI trading agents — stateless; forwards the caller's token to order and market data services.
+module "mcp_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-mcp-svc"
+  container_name = "mcp-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  target_port    = 8084
+
+  env_vars = concat(
+    local.common_env_vars,
+    [
+      { name = "ORDER_SERVICE_URL",
+        value = "https://${local.prefix}-order-svc.${azurerm_container_app_environment.main.default_domain}" },
+      { name = "MARKETDATA_URL",
+        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
+      { name = "MCP_PUBLIC_URL",
+        value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}" },
+    ]
+  )
+}
+
+# Trading advisor: chat UI + Claude agent loop; trades through the MCP service with the user's token.
+module "advisor_service" {
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-advisor-svc"
+  container_name = "advisor-service"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  target_port    = 8085
+
+  extra_secrets = var.anthropic_api_key != "" ? [
+    { name = "anthropic-api-key", value = var.anthropic_api_key },
+  ] : []
+
+  env_vars = concat(
+    local.common_env_vars,
+    [
+      { name = "MCP_SERVER_URL",
+        value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}/mcp" },
+    ],
+    var.anthropic_api_key != "" ? [{ name = "ANTHROPIC_API_KEY", secret_name = "anthropic-api-key" }] : []
   )
 }

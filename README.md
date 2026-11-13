@@ -14,6 +14,7 @@ A market data application with a Spring Boot backend and React frontend. The bac
 ```
 OrderManagerAI/
 ├── marketdata/   # Spring Boot service (port 8080)
+├── mcpservice/   # MCP server for AI trading agents (port 8084)
 └── frontend/     # React app (port 3000)
 ```
 
@@ -73,6 +74,25 @@ npm start
 The app opens at `http://localhost:3000` and displays live market data fetched from the backend.
 
 > **Note:** Run the backend before starting the frontend. On Windows use a **bash** terminal (Git Bash) — `npm` may not work in PowerShell by default due to execution policy restrictions.
+
+### MCP server for AI agents
+
+`mcpservice` (port 8084) exposes `get_market_prices`, `place_order` and `cancel_order` as MCP tools at `/mcp` (Streamable HTTP). Run it alongside the market data, order, risk and account services:
+
+```bash
+cd mcpservice
+export $(cat ../.env | xargs)   # needs AAD_TENANT_ID, AAD_CLIENT_ID
+mvn spring-boot:run
+```
+
+Agents call it with an Entra ID token issued on behalf of an advisor with the `api://<AAD_CLIENT_ID>/mcp.trade` scope (admin consent required). For example, with Claude Code:
+
+```bash
+claude mcp add --transport http ordermanager http://localhost:8084/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+The MCP Inspector (`npx @modelcontextprotocol/inspector`) works too. Per-order limits are set with `MCP_MAX_QUANTITY_PER_ORDER` (default 1000) and `MCP_MAX_NOTIONAL_PER_ORDER` (default 50000).
 
 ## Tests
 

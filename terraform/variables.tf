@@ -22,6 +22,12 @@ variable "kafka_cluster_api_secret" {
   sensitive = true
 }
 
+variable "anthropic_api_key" {
+  description = "Claude API key for the trading advisor service."
+  sensitive   = true
+  default     = ""
+}
+
 variable "finnhub_api_key" {
   sensitive = true
   default   = ""
@@ -34,14 +40,5 @@ variable "neon_db_password" {
 
 variable "supabase_db_password" {
   description = "Password for the Supabase PostgreSQL ordermanager_user role (order service)"
-  sensitive   = true
-}
-
-variable "ghcr_username" {
-  description = "GitHub username used to pull images from ghcr.io (must have read:packages scope)"
-}
-
-variable "ghcr_token" {
-  description = "GitHub PAT with read:packages scope for Container Apps to pull from ghcr.io"
   sensitive   = true
 }

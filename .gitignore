@@ -47,3 +47,10 @@ terraform/.terraform.lock.hcl
 terraform/.terraform/providers/*
 
 
+mcpservice/target/*
+# Terraform plan files embed secret values
+*tfplan
+*.tfplan
+
+# Maven build output (all modules)
+**/target/

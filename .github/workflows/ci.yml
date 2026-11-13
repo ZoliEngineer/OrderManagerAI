@@ -19,6 +19,8 @@ jobs:
       accountservice: ${{ steps.filter.outputs.accountservice }}
       orderservice: ${{ steps.filter.outputs.orderservice }}
       riskservice: ${{ steps.filter.outputs.riskservice }}
+      mcpservice: ${{ steps.filter.outputs.mcpservice }}
+      advisorservice: ${{ steps.filter.outputs.advisorservice }}
       frontend: ${{ steps.filter.outputs.frontend }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
@@ -38,6 +40,10 @@ jobs:
             riskservice:
               - 'riskservice/**'
               - 'proto/**'
+            mcpservice:
+              - 'mcpservice/**'
+            advisorservice:
+              - 'advisorservice/**'
             frontend:
               - 'frontend/**'
             shared:
@@ -138,6 +144,54 @@ jobs:
         with:
           name: Risk Service Tests
           path: riskservice/target/surefire-reports/*.xml
+          reporter: java-junit
+
+  mcpservice-test:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.mcpservice == 'true' || needs.paths-filter.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run MCP service tests
+        run: cd mcpservice && mvn clean verify -B
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: MCP Service Tests
+          path: mcpservice/target/surefire-reports/*.xml
+          reporter: java-junit
+
+  advisorservice-test:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.advisorservice == 'true' || needs.paths-filter.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run advisor service tests
+        run: cd advisorservice && mvn clean verify -B
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Advisor Service Tests
+          path: advisorservice/target/surefire-reports/*.xml
           reporter: java-junit
 
   frontend-test:
