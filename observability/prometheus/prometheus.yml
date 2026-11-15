@@ -1,6 +1,10 @@
 global:
   scrape_interval: 15s      # how often Prometheus pulls each target
-  evaluation_interval: 15s  # how often rules are evaluated (used from step 7)
+  evaluation_interval: 15s  # how often rules are evaluated
+
+# Recording and alert rules. Alerts are only visible in the Prometheus UI (Alerts tab) until Alertmanager arrives in step 8.
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 # One job per service; the job label identifies it.
 # Drop actuator requests (scrapes, health probes) from HTTP metrics so they don't skew rate/latency/SLIs.

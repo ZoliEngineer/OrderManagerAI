@@ -5,6 +5,10 @@ global:
   scrape_interval: 30s      # slower than local: fewer samples, quieter logs
   evaluation_interval: 30s
 
+# Shared rules only (not local.yml). Delivered as a second Container App secret; file name = secret name.
+rule_files:
+  - /etc/prometheus-config/prometheus-rules
+
 scrape_configs:
 %{ for job, svc in { marketdata = "marketdata", accountservice = "acct-svc", orderservice = "order-svc", mcpservice = "mcp-svc", advisorservice = "advisor-svc" } ~}
   - job_name: ${job}

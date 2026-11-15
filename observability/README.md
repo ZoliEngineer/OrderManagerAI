@@ -32,6 +32,19 @@ sum(rate(http_server_requests_seconds_sum[5m]))
 jvm_memory_used_bytes{area="heap"}                         # gauge
 ```
 
+## Alert rules
+`prometheus/rules/ordermanager.yml` (recording rules + alerts, local and Azure) and `rules/local.yml` (TargetDown, local only).
+Alerts show up in Prometheus -> Alerts (http://localhost:9091/alerts): *inactive -> pending (condition true, waiting out `for:`) -> firing*.
+In Azure use Grafana -> Explore -> `ALERTS{alertstate="firing"}`. Nothing is sent anywhere until Alertmanager (step 8).
+
+Unit tests use fake input series, no server needed (also run by CI, job `prometheus-rules`):
+```bash
+cd observability/prometheus
+docker run --rm --entrypoint promtool -v "$PWD":/p prom/prometheus:v3.5.0 check rules /p/rules/ordermanager.yml /p/rules/local.yml
+docker run --rm --entrypoint promtool -v "$PWD":/p prom/prometheus:v3.5.0 test rules /p/tests/ordermanager.test.yml
+```
+Try it live: stop riskservice, place an order -> `RiskFailSafeRejects` goes pending, then firing after 1 minute; `TargetDown` fires too.
+
 ## Grafana
 Data source and dashboards are **provisioned from files** (`grafana/provisioning`, `grafana/dashboards`), so
 `docker compose down && up` restores everything. Provisioned dashboards are read-only in the UI: to change one,

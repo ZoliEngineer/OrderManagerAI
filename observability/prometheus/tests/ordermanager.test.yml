@@ -1,0 +1,120 @@
+# Run: docker run --rm --entrypoint promtool -v "$PWD":/p prom/prometheus:v3.5.0 test rules /p/tests/ordermanager.test.yml
+# (from observability/prometheus). Input series are fake data, one sample per interval; no Prometheus server needed.
+rule_files:
+  - ../rules/ordermanager.yml
+  - ../rules/local.yml
+
+evaluation_interval: 1m
+
+tests:
+  # 1 request per minute, half failing: 50% error ratio but only 0.017 req/s => below the volume guard.
+  - name: low volume with 50% errors does not fire
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="orderservice", status="200"}'
+        values: '0+1x30'
+      - series: 'http_server_requests_seconds_count{job="orderservice", status="500"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighErrorRate
+        exp_alerts: []
+
+  # 10 req/s total, 20% failing: above the guard and the threshold, held longer than `for`.
+  - name: high volume with 20% errors fires
+    interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="orderservice", status="200"}'
+        values: '0+480x30'
+      - series: 'http_server_requests_seconds_count{job="orderservice", status="500"}'
+        values: '0+120x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: HighErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: orderservice
+            exp_annotations:
+              summary: "orderservice: 20% of requests fail with 5xx"
+
+  - name: failsafe rejects fire
+    interval: 1m
+    input_series:
+      - series: 'orders_placed_total{job="orderservice", outcome="failsafe"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: RiskFailSafeRejects
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "Orders are being rejected because the risk service is unavailable or too slow"
+
+  - name: accepted and rejected orders do not trigger the failsafe alert
+    interval: 1m
+    input_series:
+      - series: 'orders_placed_total{job="orderservice", outcome="accepted"}'
+        values: '0+6x20'
+      - series: 'orders_placed_total{job="orderservice", outcome="rejected"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: RiskFailSafeRejects
+        exp_alerts: []
+
+  - name: ring buffer pressure fires when slots run out
+    interval: 1m
+    input_series:
+      - series: 'execution_ringbuffer_remaining{job="executionservice"}'
+        values: '65536x5 5000x15'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: RingBufferPressure
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: RingBufferPressure
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: executionservice
+            exp_annotations:
+              summary: "Execution ring buffer has only 5000 free slots"
+
+  # Ticks flow for 10 minutes, then stop: increase()==0 after 5m, `for` 5m more => fires at ~20m.
+  - name: stale prices fire after ticks stop
+    interval: 1m
+    input_series:
+      - series: 'marketdata_ticks_total{job="marketdata"}'
+        values: '0+100x10 1000x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: StalePrices
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: StalePrices
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: marketdata
+            exp_annotations:
+              summary: "Market data has received no price ticks for 10 minutes"
+
+  - name: down target fires locally
+    interval: 1m
+    input_series:
+      - series: 'up{job="riskservice"}'
+        values: '1x5 0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: TargetDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: riskservice
+            exp_annotations:
+              summary: "riskservice is not being scraped (down, or wrong port)"

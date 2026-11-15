@@ -431,6 +431,10 @@ module "prometheus" {
         domain = azurerm_container_app_environment.main.default_domain
       })
     },
+    {
+      name  = "prometheus-rules"
+      value = file("${path.module}/../observability/prometheus/rules/ordermanager.yml")
+    },
   ]
 }
 
