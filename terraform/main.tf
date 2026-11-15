@@ -44,6 +44,16 @@ locals {
     { name = "AAD_CLIENT_ID", value = azuread_application.app.client_id },
     { name = "CORS_ALLOWED_ORIGINS", value = local.frontend_origin },
   ]
+
+  # Spans go straight to Grafana Cloud (no Collector in Azure). Empty until the grafana_cloud_otlp_* variables are set.
+  # The auth header comes from the secret "grafana-otlp-auth", so every instrumented service must also have it in extra_secrets.
+  otel_enabled = var.grafana_cloud_otlp_auth != ""
+  otel_secrets = local.otel_enabled ? [{ name = "grafana-otlp-auth", value = var.grafana_cloud_otlp_auth }] : []
+  otel_env_vars = local.otel_enabled ? [
+    { name = "OTEL_TRACES_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/traces" },
+    { name = "MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
+    { name = "MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT_NAME", value = "azure-prod" },
+  ] : []
 }
 
 # ── Entra ID App Registration ────────────────────────────
@@ -277,17 +287,10 @@ module "order_service" {
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-    ], var.grafana_cloud_otlp_auth != "" ? [
-    { name = "grafana-otlp-auth", value = var.grafana_cloud_otlp_auth },
-  ] : [])
+  ], local.otel_secrets)
 
   env_vars = concat(
-    var.grafana_cloud_otlp_auth != "" ? [
-      # Spans go straight to Grafana Cloud (no Collector in Azure)
-      { name = "OTEL_TRACES_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/traces" },
-      { name = "MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
-      { name = "MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT_NAME", value = "azure-prod" },
-    ] : [],
+    local.otel_env_vars,
     [
       { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "supabase-db-password" },
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },
@@ -316,13 +319,14 @@ module "risk_service" {
   target_port    = 9090
   transport      = "http2"
 
-  extra_secrets = [
+  extra_secrets = concat([
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-  ]
+  ], local.otel_secrets)
 
   env_vars = concat(
+    local.otel_env_vars,
     [
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },
       { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
