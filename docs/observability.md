@@ -59,8 +59,8 @@ The apps don't know which cloud they run on; the only exception is two resource 
 
 ## Design rules
 
-### Instrumentation (shared `observability-common` module)
-Spring Boot auto-configuration jar used by every service. It contains:
+### Instrumentation (per-service config, no shared module)
+**Revised decision:** no standalone `observability-common` module just to be a dependency, and the conventional `cd <svc> && mvn clean package` build stays. Each service carries the same few lines of `application.properties` (`management.endpoints.web.exposure.include`, `management.metrics.tags.application`) plus its own Micrometer dependency. Cross-cutting rules that would otherwise need code go into infrastructure instead: e.g. `/actuator/**` is dropped from HTTP metrics by a Prometheus `metric_relabel_configs` rule, not by a `MeterFilter`. If a later step needs shared Java code (the items below), decide again at that step rather than assume a module. What the list below describes is the target behaviour, wherever it ends up living:
 - **Shared config** in `application-observability.properties`: OTLP endpoints, 30 s metric step, `base2_expo` histograms, sampling, Kafka observation on.
 - **Resource attributes:** `service.name`, `service.namespace=ordermanager`, `service.version=${GIT_SHA}`, `deployment.environment.name`, `cloud.provider=azure`, `cloud.platform=azure_container_apps`.
 - **Cardinality guards** (`MeterFilter`):
@@ -112,7 +112,7 @@ These come built in: HTTP RED, JVM, HikariCP, Kafka client, Lettuce, process CPU
 | SLO | SLI | Objective |
 |---|---|---|
 | Order availability | non-5xx & non-failsafe `POST /api/orders` / all | 99% over 7d |
-| Order latency | `histogram_fraction(0, 0.8, orders.place.latency)` | 99% over 7d |
+| Order latency | share of `orders.place.latency` at or under 0.8 s (`le="0.8"` bucket; `histogram_fraction` once native histograms exist, step 14) | 99% over 7d |
 
 **KPIs** (dashboards only):
 - Risk check < 50 ms for ≥ 99% of calls.
@@ -202,9 +202,9 @@ Each step adds **one technology or concept**, ends in a verifiable state and is 
    - *Learn:* naming, cardinality, `MeterRegistry` vs `@Observed`, testing metrics.
    - *Build:* `orders.placed`, `orders.place.latency`, `orders.cancelled` + `SimpleMeterRegistry` tests.
    - *Verify:* a rejected order shows up under `outcome="rejected"`.
-4. **Shared module + all services.**
-   - *Learn:* auto-config jars, `MeterFilter`, common tags.
-   - *Build:* `observability-common` with filters; every service depends on it; actuator in executionservice; all targets scraped; `ci.yml` paths filter.
+4. **All services (done, revised: no shared module).**
+   - *Learn:* common tags, `metric_relabel_configs`, per-service config vs a shared jar.
+   - *Build:* Prometheus registry + `exposure.include` + `application` tag in every service; actuator (web server on :8086) in executionservice; all targets scraped; `/actuator` URIs dropped by relabeling.
    - *Verify:* all targets UP, no `/actuator` URIs in HTTP metrics.
 5. **Grafana.**
    - *Learn:* data sources, panels, variables, provisioning, dashboards as JSON.
@@ -213,25 +213,29 @@ Each step adds **one technology or concept**, ends in a verifiable state and is 
 6. **Remaining business metrics** (one service per commit).
    - *Learn:* gauges on live state, timers from Kafka timestamps.
    - *Build:* metrics table for risk, marketdata, execution, account, mcp; Order Flow and Market Data dashboards.
-   - *Verify:* live data with the simulator.
+   - *Verify:* live data with the simulator. *Done; in Azure risk's panels stay empty (not scraped).*
 7. **Rule files + promtool.**
    - *Learn:* recording rules, alert rules, `for:`, rule unit tests.
    - *Build:* `observability/prometheus/rules/` (HighErrorRate with min volume, RiskFailSafeRejects, RingBufferPressure, StalePrices, local TargetDown) + tests + CI `promtool test rules`.
    - *Verify:* a 1-in-2 failure does not fire; stopping Risk fires.
+   - *Done:* shared rules (`rules/ordermanager.yml`) run locally and in Azure; `TargetDown` is local-only (`rules/local.yml`); tests in `tests/`, CI job `prometheus-rules`.
 8. **Alertmanager + Mailpit.**
    - *Learn:* routing tree, grouping, inhibition, silences.
    - *Build:* `alertmanager.yml` (critical vs digest, ServiceDown/TargetDown inhibits HighErrorRate).
    - *Verify:* email in Mailpit (:8025); a silence suppresses repeats.
+   - *Done, local only:* the Azure Prometheus has no Alertmanager (Mailpit cannot deliver real mail). The inhibition uses our `TargetDown` alert name.
 9. **Histograms + SLOs.**
    - *Learn:* classic vs native histograms, SLIs, error budgets, burn rates.
    - *Build:* native histograms on KPI timers; SLO recording rules and burn-rate alerts with tests; System Overview SLO row.
    - *Verify:* a simulated fast burn fires the page alert.
+   - *Done, with a deviation:* **no native histograms yet.** Micrometer 1.16's Prometheus registry emits classic buckets only (native histograms need OTLP, step 14). The SLIs use a classic bucket ratio with an exact `le="0.8"` bucket (`serviceLevelObjectives(800ms)`) instead of `histogram_fraction`. Rules in `rules/slo.yml`, System Overview dashboard.
 
 ### Phase 2 — OpenTelemetry
 10. **Collector + Tempo, first traces (order).**
     - *Learn:* spans, `traceparent`, SDK vs API, OTLP, Collector pipelines, resource attributes.
-    - *Build:* Collector + Tempo in compose; `spring-boot-starter-opentelemetry` via observability-common; JDBC spans; actuator spans dropped.
+    - *Build:* Collector + Tempo in compose; `spring-boot-starter-opentelemetry` added per service (no shared module); JDBC spans; actuator spans dropped.
     - *Verify:* an order trace with SQL child spans; TraceQL query.
+    - *Done (local only), partly verified:* Collector (:4318) → Tempo → Grafana data source; orderservice exports spans, actuator calls produce none. The Tempo data source is excluded from the Azure Grafana image. **Still to check:** an authenticated `POST /api/orders` with its SQL child spans (needs a real JWT; only a JDBC `connection` span was seen). Azure has no Collector/Tempo yet.
 11. **Context propagation, one hop each.**
     - *Learn:* propagators, carriers, thread hand-offs, parent vs link.
     - 11a gRPC Order → Risk.
@@ -260,6 +264,8 @@ Each step adds **one technology or concept**, ends in a verifiable state and is 
     - *Verify:* a UI order trace starts in the browser; a JS error shows a readable stack.
 
 ### Phase 3 — Grafana Cloud and production (Azure)
+**Decision 2026-11-15:** steps 17-18 are pulled forward, to follow step 11. Reason: a self-hosted Tempo/Collector in Azure would be throwaway, while Grafana Cloud lets every later step be verified in Azure. Until step 18's full wiring, each instrumented service gets its OTLP env vars in Terraform individually (orderservice first; see [observability/README.md](../observability/README.md#grafana-cloud-steps-17-18-pulled-forward)).
+
 17. **Grafana Cloud stack.**
     - *Learn:* stack endpoints, OTLP gateway, access policies, the usage page.
     - *Build:* create the stack by hand; point the *local Collector* at Grafana Cloud.

@@ -272,14 +272,22 @@ module "order_service" {
   resource_group = azurerm_resource_group.main.name
   target_port    = 8082
 
-  extra_secrets = [
+  extra_secrets = concat([
     { name = "supabase-db-password", value = var.supabase_db_password },
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-  ]
+    ], var.grafana_cloud_otlp_auth != "" ? [
+    { name = "grafana-otlp-auth", value = var.grafana_cloud_otlp_auth },
+  ] : [])
 
   env_vars = concat(
+    var.grafana_cloud_otlp_auth != "" ? [
+      # Spans go straight to Grafana Cloud (no Collector in Azure)
+      { name = "OTEL_TRACES_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/traces" },
+      { name = "MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
+      { name = "MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT_NAME", value = "azure-prod" },
+    ] : [],
     [
       { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "supabase-db-password" },
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },

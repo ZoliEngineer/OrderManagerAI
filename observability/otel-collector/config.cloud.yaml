@@ -1,0 +1,32 @@
+# Same as config.yaml, plus a second exporter that forwards to Grafana Cloud (step 17).
+# Used via docker-compose.cloud.yml; needs GRAFANA_CLOUD_OTLP_ENDPOINT / _INSTANCE_ID / _TOKEN.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+processors:
+  batch: {}
+extensions:
+  basicauth/grafanacloud:
+    client_auth:
+      username: ${env:GRAFANA_CLOUD_INSTANCE_ID}
+      password: ${env:GRAFANA_CLOUD_OTLP_TOKEN}
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  otlphttp/grafanacloud:
+    endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}   # e.g. https://otlp-gateway-prod-us-east-0.grafana.net/otlp
+    auth:
+      authenticator: basicauth/grafanacloud
+service:
+  extensions: [basicauth/grafanacloud]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/tempo, otlphttp/grafanacloud]

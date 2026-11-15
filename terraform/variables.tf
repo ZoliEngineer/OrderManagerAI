@@ -53,3 +53,16 @@ variable "grafana_admin_password" {
   description = "Admin password for the Grafana Container App (login user: admin). Set via TF_VAR_grafana_admin_password."
   sensitive   = true
 }
+
+variable "grafana_cloud_otlp_endpoint" {
+  description = "Grafana Cloud OTLP gateway base URL, e.g. https://otlp-gateway-prod-us-east-0.grafana.net/otlp. Empty = apps export to nothing. Set via TF_VAR_grafana_cloud_otlp_endpoint."
+  type        = string
+  default     = ""
+}
+
+variable "grafana_cloud_otlp_auth" {
+  description = "Full Authorization header value for the OTLP gateway: \"Basic <base64(instanceId:token)>\". Set via TF_VAR_grafana_cloud_otlp_auth."
+  type        = string
+  sensitive   = true
+  default     = ""
+}

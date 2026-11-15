@@ -1,0 +1,10 @@
+# Optional overlay: the local Collector also forwards to Grafana Cloud.
+#   docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.cloud.yml up -d
+services:
+  otel-collector:
+    volumes:
+      - ./otel-collector/config.cloud.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      GRAFANA_CLOUD_OTLP_ENDPOINT: ${GRAFANA_CLOUD_OTLP_ENDPOINT:?set in .env}
+      GRAFANA_CLOUD_INSTANCE_ID: ${GRAFANA_CLOUD_INSTANCE_ID:?set in .env}
+      GRAFANA_CLOUD_OTLP_TOKEN: ${GRAFANA_CLOUD_OTLP_TOKEN:?set in .env}

@@ -34,6 +34,29 @@ services:
       - "8025:8025"     # web UI
       # SMTP (1025) is only reachable inside the compose network
 
+  # Receives OTLP spans from the apps (host :4318) and forwards them to Tempo.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.131.0
+    container_name: om-otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "4318:4318"     # OTLP/HTTP, used by the apps
+      - "4317:4317"     # OTLP/gRPC
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    depends_on:
+      - tempo
+
+  # Trace storage (local disk) and query API.
+  tempo:
+    image: grafana/tempo:2.8.2
+    container_name: om-tempo
+    user: root          # local volume write access
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
   grafana:
     image: grafana/grafana:12.1.0
     container_name: om-grafana
@@ -41,6 +64,7 @@ services:
       - "3001:3000"            # host 3001: the React dev server owns 3000
     environment:
       # Local-only convenience: no login screen. Never do this in a shared environment.
+      TEMPO_URL: http://tempo:3200
       PROMETHEUS_URL: http://prometheus:9090   # compose service name + container port (not host 9091)
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
@@ -51,8 +75,10 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
+      - tempo
 
 volumes:
   prometheus-data:
   grafana-data:
   alertmanager-data:
+  tempo-data:

@@ -82,3 +82,45 @@ terraform output grafana_url      # open it, log in as admin
 ```
 Verify: Grafana -> Explore -> Prometheus -> `up` (all 1 except riskservice, which is not scraped) -> Dashboards -> Service Detail.
 To cut cost while not testing: `terraform apply -var observability_enabled=false` (removes both apps, lets services scale to zero).
+
+## Traces (step 10)
+Apps send spans over OTLP/HTTP to the **OTel Collector** (:4318), which batches them and forwards to **Tempo**; Grafana reads Tempo (data source *Tempo*).
+Only orderservice is instrumented so far (`spring-boot-starter-opentelemetry` + `datasource-micrometer` for SQL spans). Traces are local only; Azure has no Collector/Tempo yet.
+```bash
+docker compose up -d
+cd ../orderservice && export $(grep -v '^#' ../.env | xargs) && mvn spring-boot:run   # place an order via the UI or curl
+```
+Grafana -> Explore -> Tempo -> Search (service `ordermanager-order`), or TraceQL:
+```
+{ resource.service.name = "ordermanager-order" && span.http.route = "/api/orders" }
+{ resource.service.name = "ordermanager-order" && kind = client }   # SQL / outbound spans
+```
+Expect one server span for `POST /api/orders` with child spans for the SQL statements. `/actuator/**` calls produce no spans.
+
+## Grafana Cloud (steps 17-18, pulled forward)
+Decision 2026-11-15: Grafana Cloud is set up right after step 11 so every later step can be tested in Azure.
+
+**One-time, by hand** (grafana.com, free tier):
+1. Create a stack. Region close to your Azure region.
+2. Stack -> *Details* -> OpenTelemetry -> note the OTLP endpoint (`https://otlp-gateway-<region>.grafana.net/otlp`) and the **instance ID** (number).
+3. *Access policies* -> create a policy with scopes `traces:write`, `metrics:write`, `logs:write`, `profiles:write` -> add a token.
+4. Put them in the root `.env` (git-ignored):
+   ```
+   GRAFANA_CLOUD_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
+   GRAFANA_CLOUD_INSTANCE_ID=123456
+   GRAFANA_CLOUD_OTLP_TOKEN=glc_...
+   ```
+
+**Local**: the Collector also forwards to the cloud (Tempo stays too):
+```bash
+cd observability
+docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.cloud.yml up -d
+```
+Place an order, then Grafana Cloud -> Explore -> Tempo (`grafanacloud-<stack>-traces`).
+
+**Azure**: apps export directly (no Collector). Set, then `terraform apply` and deploy:
+```bash
+export TF_VAR_grafana_cloud_otlp_endpoint="https://otlp-gateway-<region>.grafana.net/otlp"
+export TF_VAR_grafana_cloud_otlp_auth="Basic $(printf '%s:%s' "$GRAFANA_CLOUD_INSTANCE_ID" "$GRAFANA_CLOUD_OTLP_TOKEN" | base64 -w0)"
+```
+Only orderservice is wired so far; each newly instrumented service gets the same three env vars. Never commit the token.
