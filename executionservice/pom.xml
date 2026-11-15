@@ -19,6 +19,19 @@
     </properties>
 
     <dependencies>
+        <!-- Tiny embedded web server, only so Prometheus can scrape /actuator/prometheus -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
         <!-- Kafka — order.created consumer + execution.report producer -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

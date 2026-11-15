@@ -24,7 +24,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         .requestMatchers("/mcp", "/mcp/**").hasAuthority(REQUIRED_SCOPE)
                         .anyRequest().authenticated()
                 )

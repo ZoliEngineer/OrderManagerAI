@@ -164,6 +164,16 @@ These come built in: HTTP RED, JVM, HikariCP, Kafka client, Lettuce, process CPU
 
 ---
 
+## Testing environment (decision, 2026-11-14)
+Steps are tested **in Azure**, not only locally. Until the Grafana Cloud phase, Prometheus and Grafana run as two more Container Apps in the existing environment (Terraform `module.prometheus` / `module.grafana`; config in `observability/`). Local Compose stays for quick iteration.
+- **Every step that changes a service, the Prometheus config, rules or dashboards ends with deploy + verify in Azure** (`gh workflow run deploy.yml --ref <branch>`, see [observability/README.md](../observability/README.md#azure)). Compose-only components (Alertmanager + Mailpit, Collector, Tempo, Loki, Pyroscope, Alloy) get a Container App module when their step lands; rules and dashboards deploy with the Prometheus and Grafana apps.
+- **Prometheus scrapes** the services' public `/actuator/prometheus` over HTTPS (30 s). Execution is scraped over its internal ingress. **Risk is not scraped**: its only ingress is gRPC. Its metrics need OTLP push (step 14) or a second ingress.
+- **Cost:** scraped services run at `min_replicas = 1` (`observability_enabled`), since a scrape wakes a scale-to-zero app anyway.
+- **Known gap:** `/actuator/prometheus` is unauthenticated on the public services. Metrics carry no ids or PII by design; close the gap with a scrape token before this is more than a test environment.
+- **Prometheus has no persistent storage** (7-day retention on the container filesystem): a restart loses history. Fine for tests; Grafana Cloud (Phase 3) replaces it.
+
+---
+
 ## Roadmap
 Each step adds **one technology or concept**, ends in a verifiable state and is one PR. Format: **Learn** · **Build** · **Verify**.
 

@@ -45,3 +45,7 @@ output "aad_tenant_id" {
 output "aad_scope" {
   value = "api://${azuread_application.app.client_id}/market.read"
 }
+
+output "grafana_url" {
+  value = var.observability_enabled ? "https://${module.grafana[0].fqdn}" : null
+}

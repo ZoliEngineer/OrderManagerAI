@@ -17,7 +17,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         .requestMatchers("/api/internal/**").hasAuthority("SCOPE_internal.read")
                         .anyRequest().authenticated()
                 )

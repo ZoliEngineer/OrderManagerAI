@@ -69,3 +69,42 @@ variable "env_vars" {
   }))
   default = []
 }
+
+variable "image" {
+  description = "Initial image. The deploy workflow replaces it (ignore_changes), except for third-party images that are never redeployed."
+  type        = string
+  default     = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+}
+
+variable "min_replicas" {
+  type    = number
+  default = 0
+}
+
+variable "cpu" {
+  type    = number
+  default = 0.25
+}
+
+variable "memory" {
+  type    = string
+  default = "0.5Gi"
+}
+
+variable "args" {
+  description = "Container arguments (optional)."
+  type        = list(string)
+  default     = null
+}
+
+variable "external_ingress" {
+  description = "true: reachable from the internet. false: only from inside the Container Apps environment."
+  type        = bool
+  default     = true
+}
+
+variable "secret_volume_path" {
+  description = "If set, every secret of this app is mounted as a file under this directory (file name = secret name)."
+  type        = string
+  default     = null
+}

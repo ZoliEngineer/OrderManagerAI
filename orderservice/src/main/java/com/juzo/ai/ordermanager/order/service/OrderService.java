@@ -1,5 +1,8 @@
 package com.juzo.ai.ordermanager.order.service;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -33,13 +36,36 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final OrderEventPublisher eventPublisher;
     private final RiskGrpcClient riskGrpcClient;
+    private final MeterRegistry meters;
 
     public OrderService(OrderRepository orderRepository,
                         OrderEventPublisher eventPublisher,
-                        RiskGrpcClient riskGrpcClient) {
+                        RiskGrpcClient riskGrpcClient,
+                        MeterRegistry meters) {
         this.orderRepository = orderRepository;
         this.eventPublisher = eventPublisher;
         this.riskGrpcClient = riskGrpcClient;
+        this.meters = meters;
+    }
+
+    // Tag values are small fixed sets (enums / literals) => bounded cardinality.
+    // Never tag with accountId, orderId, userId or ticker-per-user data.
+    private void countPlaced(PlaceOrderRequest r, String outcome) {
+        Counter.builder("orders.placed")
+                .description("Order placement attempts by final outcome")
+                .tag("side", r.side().name())
+                .tag("type", r.type().name())
+                .tag("outcome", outcome)
+                .register(meters)
+                .increment();
+    }
+
+    private void countCancelled(String outcome) {
+        Counter.builder("orders.cancelled")
+                .description("Order cancellation attempts by outcome")
+                .tag("outcome", outcome)
+                .register(meters)
+                .increment();
     }
 
     public List<Order> getOrdersForAccount(UUID accountId, String userId) {
@@ -48,18 +74,32 @@ public class OrderService {
 
     @Transactional
     public OrderResponse placeOrder(PlaceOrderRequest request, String userId, String bearerToken) {
-        RiskDecision decision = checkRisk(request, userId, bearerToken);
-        if (decision.rejected()) {
-            return new OrderResponse(null, "REJECTED", decision.reason() + " — " + decision.message());
-        }
-        Order order = persist(request, userId);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                eventPublisher.publishOrderCreated(order);
+        Timer.Sample sample = Timer.start(meters);
+        String outcome = "error"; // stays "error" if anything below throws
+        try {
+            RiskDecision decision = checkRisk(request, userId, bearerToken);
+            if (decision.rejected()) {
+                outcome = decision.failSafe() ? "failsafe" : "rejected";
+                countPlaced(request, outcome);
+                return new OrderResponse(null, "REJECTED", decision.reason() + " — " + decision.message());
             }
-        });
-        return new OrderResponse(order.id(), order.status().name(), "Order accepted");
+            Order order = persist(request, userId);
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    eventPublisher.publishOrderCreated(order);
+                }
+            });
+            outcome = "accepted";
+            countPlaced(request, outcome);
+            return new OrderResponse(order.id(), order.status().name(), "Order accepted");
+        } finally {
+            sample.stop(Timer.builder("orders.place.latency")
+                    .description("End-to-end placeOrder time (risk call + persist)")
+                    .publishPercentileHistogram()
+                    .tag("outcome", outcome)
+                    .register(meters));
+        }
     }
 
     private Order persist(PlaceOrderRequest request, String userId) {
@@ -74,9 +114,13 @@ public class OrderService {
     @Transactional
     public void cancelOrder(UUID orderId, String userId) {
         Order order = orderRepository.findByIdAndUserId(orderId, userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderId));
+                .orElseThrow(() -> {
+                    countCancelled("not_found");
+                    return new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderId);
+                });
 
         if (!CANCELLABLE_STATUSES.contains(order.status())) {
+            countCancelled("conflict");
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Order cannot be cancelled in status: " + order.status());
         }
@@ -84,10 +128,12 @@ public class OrderService {
         int updated = orderRepository.cancelIfCancellable(orderId);
         if (updated == 0) {
             // Status changed concurrently between the check and the UPDATE
+            countCancelled("conflict");
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Order cannot be cancelled in status: " + order.status());
         }
 
+        countCancelled("cancelled");
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {

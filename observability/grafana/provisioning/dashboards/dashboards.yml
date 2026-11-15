@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: ordermanager
+    type: file
+    allowUiUpdates: false      # the JSON in git is the source of truth; export UI edits back to the repo
+    options:
+      path: /etc/grafana/dashboards

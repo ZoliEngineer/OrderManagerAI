@@ -16,7 +16,7 @@ public class SecurityConfig {
         return http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()))

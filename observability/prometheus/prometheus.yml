@@ -1,0 +1,78 @@
+global:
+  scrape_interval: 15s      # how often Prometheus pulls each target
+  evaluation_interval: 15s  # how often rules are evaluated (used from step 7)
+
+# One job per service; the job label identifies it.
+# Drop actuator requests (scrapes, health probes) from HTTP metrics so they don't skew rate/latency/SLIs.
+# One rule in one place, instead of code in every service.
+scrape_configs:
+  - job_name: marketdata
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          service: marketdata
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: accountservice
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8081"]
+        labels:
+          service: account
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: orderservice
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8082"]
+        labels:
+          service: order
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: riskservice
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8083"]
+        labels:
+          service: risk
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: mcpservice
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8084"]
+        labels:
+          service: mcp
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: advisorservice
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8085"]
+        labels:
+          service: advisor
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: executionservice
+    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8086"]
+        labels:
+          service: execution
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
