@@ -62,7 +62,7 @@ class OrderToolsTest {
     private OrderTools tools(BigDecimal maxQty, BigDecimal maxNotional) {
         OrderServiceClient orders = new OrderServiceClient(RestClient.create(orderServer.url("/").toString()));
         MarketDataClient market = new MarketDataClient(RestClient.create(marketServer.url("/").toString()));
-        return new OrderTools(orders, market, new TradingGuardrails(new TradingGuardrailProperties(maxQty, maxNotional)));
+        return new OrderTools(orders, market, new TradingGuardrails(new TradingGuardrailProperties(maxQty, maxNotional)), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     private static MockResponse json(int status, String body) {

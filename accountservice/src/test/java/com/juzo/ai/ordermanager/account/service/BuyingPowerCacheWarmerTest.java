@@ -2,9 +2,10 @@ package com.juzo.ai.ordermanager.account.service;
 
 import com.juzo.ai.ordermanager.account.entity.Account;
 import com.juzo.ai.ordermanager.account.repository.AccountRepository;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.DefaultApplicationArguments;
@@ -30,8 +31,13 @@ class BuyingPowerCacheWarmerTest {
     @Mock
     private JdbcTemplate jdbcTemplate;
 
-    @InjectMocks
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
     private BuyingPowerCacheWarmer warmer;
+
+    @BeforeEach
+    void setUp() {
+        warmer = new BuyingPowerCacheWarmer(accountRepository, cache, jdbcTemplate, meters);
+    }
 
     @Test
     void run_putsAllAccountsIntoCache() throws Exception {
@@ -48,6 +54,7 @@ class BuyingPowerCacheWarmerTest {
 
         verify(cache).put(id1, new BigDecimal("95000.0000")); // 100000 - 5000
         verify(cache).put(id2, new BigDecimal("50000.0000")); // 50000 - 0
+        org.assertj.core.api.Assertions.assertThat(meters.get("account.cache.warmed.accounts").gauge().value()).isEqualTo(2.0);
     }
 
     @Test

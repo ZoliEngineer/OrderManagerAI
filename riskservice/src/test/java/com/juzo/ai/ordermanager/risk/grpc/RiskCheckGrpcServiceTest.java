@@ -36,7 +36,7 @@ class RiskCheckGrpcServiceTest {
     void setUp() throws Exception {
         // stub so price lookup succeeds and the invalid UUID is reached
         when(priceCache.get("AAPL")).thenReturn(Optional.of(new BigDecimal("100.00")));
-        RiskEvaluationService evaluationService = new RiskEvaluationService(buyingPowerCache, priceCache);
+        RiskEvaluationService evaluationService = new RiskEvaluationService(buyingPowerCache, priceCache, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         String serverName = InProcessServerBuilder.generateName();
         server = InProcessServerBuilder.forName(serverName)
                 .directExecutor()

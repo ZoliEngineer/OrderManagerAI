@@ -29,7 +29,7 @@ class RedisStockEventPublisherTest {
 
     @BeforeEach
     void setUp() {
-        publisher = new RedisStockEventPublisher(redisTemplate, CHANNEL);
+        publisher = new RedisStockEventPublisher(redisTemplate, CHANNEL, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test

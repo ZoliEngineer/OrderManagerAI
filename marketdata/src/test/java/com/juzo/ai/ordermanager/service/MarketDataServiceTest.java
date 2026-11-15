@@ -39,7 +39,7 @@ class MarketDataServiceTest {
     @BeforeEach
     void setUp() {
         when(priceUpdateSource.initialStocks()).thenReturn(INITIAL_STOCKS);
-        service = new MarketDataService(priceUpdateSource, List.of());
+        service = new MarketDataService(priceUpdateSource, List.of(), new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         service.start();
     }
 

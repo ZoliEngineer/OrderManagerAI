@@ -1,6 +1,8 @@
 package com.juzo.ai.ordermanager.account.service;
 
 import com.juzo.ai.ordermanager.account.repository.AccountRepository;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -20,11 +22,16 @@ public class BuyingPowerCacheWarmer implements ApplicationRunner {
     private final AccountRepository accountRepository;
     private final BuyingPowerCacheService cache;
     private final JdbcTemplate jdbcTemplate;
+    private final AtomicInteger warmed = new AtomicInteger();
 
-    public BuyingPowerCacheWarmer(AccountRepository accountRepository, BuyingPowerCacheService cache, JdbcTemplate jdbcTemplate) {
+    public BuyingPowerCacheWarmer(AccountRepository accountRepository, BuyingPowerCacheService cache,
+                                  JdbcTemplate jdbcTemplate, MeterRegistry meters) {
         this.accountRepository = accountRepository;
         this.cache = cache;
         this.jdbcTemplate = jdbcTemplate;
+        Gauge.builder("account.cache.warmed.accounts", warmed, AtomicInteger::get)
+                .description("Accounts written to Redis by the last startup warm-up")
+                .register(meters);
     }
 
     @Override
@@ -40,6 +47,7 @@ public class BuyingPowerCacheWarmer implements ApplicationRunner {
             cache.put(account.id(), buyingPower);
             count.incrementAndGet();
         });
+        warmed.set(count.get());
         log.info("Pre-warmed buying power cache for {} accounts", count.get());
     }
 }
