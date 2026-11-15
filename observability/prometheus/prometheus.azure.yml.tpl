@@ -8,6 +8,7 @@ global:
 # Shared rules only (not local.yml). Delivered as a second Container App secret; file name = secret name.
 rule_files:
   - /etc/prometheus-config/prometheus-rules
+  - /etc/prometheus-config/prometheus-rules-slo
 
 scrape_configs:
 %{ for job, svc in { marketdata = "marketdata", accountservice = "acct-svc", orderservice = "order-svc", mcpservice = "mcp-svc", advisorservice = "advisor-svc" } ~}

@@ -26,6 +26,7 @@ public class RiskEvaluationService {
         this.latency = Timer.builder("risk.evaluate.latency")
                 .description("Time to evaluate one pre-trade risk check (cache lookups + arithmetic)")
                 .publishPercentileHistogram()
+                .serviceLevelObjectives(java.time.Duration.ofMillis(50))   // KPI: risk check < 50 ms
                 .register(meters);
     }
 

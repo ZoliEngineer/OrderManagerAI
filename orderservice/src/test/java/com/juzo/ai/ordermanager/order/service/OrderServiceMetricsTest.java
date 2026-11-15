@@ -70,6 +70,20 @@ class OrderServiceMetricsTest {
                 BigDecimal.TEN, null, BigDecimal.ZERO, null, OrderStatus.PENDING, null, null, now, now);
     }
 
+    // The availability/latency SLO rules (observability/prometheus/rules/slo.yml) query le="0.8" literally.
+    @Test
+    void latencyHistogramExposesTheExact800msSloBucket() {
+        var prometheus = new io.micrometer.prometheusmetrics.PrometheusMeterRegistry(
+                io.micrometer.prometheusmetrics.PrometheusConfig.DEFAULT);
+        when(risk.check(any(), any(), any())).thenReturn(new RiskDecision(false, "NONE", "ok", "d1"));
+        when(repo.save(any())).thenReturn(savedOrder());
+
+        new OrderService(repo, publisher, risk, prometheus).placeOrder(request, "u1", "tok");
+
+        assertThat(prometheus.scrape()).contains("orders_place_latency_seconds_bucket{")
+                .contains("le=\"0.8\"");
+    }
+
     @Test
     void approvedOrderCountsAsAcceptedAndRecordsLatency() {
         when(risk.check(any(), any(), any())).thenReturn(new RiskDecision(false, "NONE", "ok", "d1"));

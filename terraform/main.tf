@@ -435,6 +435,10 @@ module "prometheus" {
       name  = "prometheus-rules"
       value = file("${path.module}/../observability/prometheus/rules/ordermanager.yml")
     },
+    {
+      name  = "prometheus-rules-slo"
+      value = file("${path.module}/../observability/prometheus/rules/slo.yml")
+    },
   ]
 }
 

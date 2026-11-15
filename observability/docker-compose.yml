@@ -15,6 +15,25 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: om-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager    # silences survive restarts
+    depends_on:
+      - mailpit
+
+  # Fake SMTP server with a web inbox: every email Alertmanager sends lands here, none leave the machine.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: om-mailpit
+    ports:
+      - "8025:8025"     # web UI
+      # SMTP (1025) is only reachable inside the compose network
+
   grafana:
     image: grafana/grafana:12.1.0
     container_name: om-grafana
@@ -36,3 +55,4 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  alertmanager-data:

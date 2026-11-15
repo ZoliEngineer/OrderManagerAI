@@ -225,5 +225,5 @@ jobs:
       - name: Check rule syntax and run rule unit tests
         run: |
           P="docker run --rm --entrypoint promtool -v $PWD/observability/prometheus:/p prom/prometheus:v3.5.0"
-          $P check rules /p/rules/ordermanager.yml /p/rules/local.yml
-          $P test rules /p/tests/ordermanager.test.yml
+          $P check rules /p/rules/ordermanager.yml /p/rules/slo.yml /p/rules/local.yml
+          $P test rules /p/tests/ordermanager.test.yml /p/tests/slo.test.yml

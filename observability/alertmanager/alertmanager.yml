@@ -1,0 +1,40 @@
+# Local only (Mailpit catches the mail; nothing leaves the machine). See docs/observability.md step 8.
+global:
+  smtp_smarthost: mailpit:1025
+  smtp_from: alertmanager@ordermanager.local
+  smtp_require_tls: false      # Mailpit speaks plain SMTP
+  resolve_timeout: 5m
+
+# The routing tree: every alert enters at the root and walks down to the first matching child.
+route:
+  receiver: digest-email                 # default: anything not matched below
+  group_by: [alertname, job]             # alerts with the same name+job become ONE notification
+  group_wait: 30s                        # wait for more alerts of a new group before the first mail
+  group_interval: 5m                     # how long before notifying again about changes to a group
+  repeat_interval: 4h                    # re-send a still-firing group this often
+  routes:
+    - matchers: [severity="critical"]
+      receiver: critical-email
+      group_wait: 10s                    # page quickly
+      repeat_interval: 1h
+
+receivers:
+  - name: critical-email
+    email_configs:
+      - to: oncall@ordermanager.local
+        send_resolved: true              # also mail when the alert clears
+        headers:
+          subject: '[CRITICAL] {{ .GroupLabels.alertname }} ({{ .GroupLabels.job }})'
+  - name: digest-email
+    email_configs:
+      - to: team@ordermanager.local
+        send_resolved: true
+        headers:
+          subject: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }} ({{ .GroupLabels.job }})'
+
+# Inhibition: while the cause is firing, mute its symptom. A dead service always has errors;
+# one "target down" mail is more useful than that plus an error-rate mail for the same job.
+inhibit_rules:
+  - source_matchers: [alertname="TargetDown"]
+    target_matchers: [alertname="HighErrorRate"]
+    equal: [job]                          # only when both alerts concern the same job

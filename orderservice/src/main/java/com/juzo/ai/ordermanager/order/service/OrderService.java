@@ -97,6 +97,9 @@ public class OrderService {
             sample.stop(Timer.builder("orders.place.latency")
                     .description("End-to-end placeOrder time (risk call + persist)")
                     .publishPercentileHistogram()
+                    // Classic histograms only have fixed buckets: the SLO threshold (800 ms = the risk deadline)
+                    // must be an exact bucket boundary, or "fraction of orders faster than 800 ms" cannot be computed.
+                    .serviceLevelObjectives(java.time.Duration.ofMillis(800))
                     .tag("outcome", outcome)
                     .register(meters));
         }
