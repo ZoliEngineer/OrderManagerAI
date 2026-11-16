@@ -46,6 +46,17 @@ services:
       - ./otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
     depends_on:
       - tempo
+      - loki
+
+  # Log storage and query API (LogQL). Receives OTLP logs from the Collector.
+  loki:
+    image: grafana/loki:3.5.3
+    container_name: om-loki
+    user: root          # local volume write access
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
 
   # Trace storage (local disk) and query API.
   tempo:
@@ -65,6 +76,7 @@ services:
     environment:
       # Local-only convenience: no login screen. Never do this in a shared environment.
       TEMPO_URL: http://tempo:3200
+      LOKI_URL: http://loki:3100
       PROMETHEUS_URL: http://prometheus:9090   # compose service name + container port (not host 9091)
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
@@ -76,9 +88,11 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - loki
 
 volumes:
   prometheus-data:
   grafana-data:
   alertmanager-data:
   tempo-data:
+  loki-data:

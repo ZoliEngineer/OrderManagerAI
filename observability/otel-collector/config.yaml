@@ -1,4 +1,4 @@
-# Receives OTLP from the apps, batches, forwards traces to Tempo.
+# Receives OTLP from the apps, batches, forwards traces to Tempo and logs to Loki.
 receivers:
   otlp:
     protocols:
@@ -13,9 +13,15 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp      # Loki's native OTLP endpoint (appends /v1/logs)
 service:
   pipelines:
     traces:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlp/tempo]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/loki]

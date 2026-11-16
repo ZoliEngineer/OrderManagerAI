@@ -74,6 +74,12 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-opentelemetry</artifactId>
         </dependency>
+        <!-- Logback -> OTel log records (trace_id/span_id, code.*) exported over OTLP; version from the Boot BOM -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+            <version>2.16.0-alpha</version>
+        </dependency>
         <!-- JDBC calls become child spans (SQL text, no bind values) -->
         <dependency>
             <groupId>net.ttddyy.observation</groupId>

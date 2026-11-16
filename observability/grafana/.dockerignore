@@ -1,2 +1,3 @@
 # Local-only data source (compose mounts the whole provisioning dir; the Azure image must not contain it)
 provisioning/datasources/tempo.yml
+provisioning/datasources/loki.yml
