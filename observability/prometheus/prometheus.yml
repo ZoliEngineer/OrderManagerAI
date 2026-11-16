@@ -12,6 +12,14 @@ alerting:
 rule_files:
   - /etc/prometheus/rules/*.yml
 
+# OTLP-pushed metrics (step 14): resource attributes kept as labels so pushed series can be told apart.
+# Pushed series get job="ordermanager/<service.name>", so they never collide with the scraped jobs below.
+otlp:
+  promote_resource_attributes:
+    - service.namespace
+    - deployment.environment.name
+    - service.version
+
 # One job per service; the job label identifies it.
 # Drop actuator requests (scrapes, health probes) from HTTP metrics so they don't skew rate/latency/SLIs.
 # One rule in one place, instead of code in every service.

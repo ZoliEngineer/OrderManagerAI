@@ -6,6 +6,12 @@ services:
     ports:
       # Host 9091, because riskservice's gRPC server already owns 9090 locally.
       - "9091:9090"
+    # OTLP receiver: apps push metrics via the Collector (step 14). native-histograms: store exponential histograms natively.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-otlp-receiver
+      - --enable-feature=native-histograms
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/rules:/etc/prometheus/rules:ro
@@ -47,6 +53,7 @@ services:
     depends_on:
       - tempo
       - loki
+      - prometheus
 
   # Log storage and query API (LogQL). Receives OTLP logs from the Collector.
   loki:

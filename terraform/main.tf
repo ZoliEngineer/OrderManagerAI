@@ -53,6 +53,8 @@ locals {
     { name = "OTEL_TRACES_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/traces" },
     { name = "MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
     { name = "OTEL_LOGS_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/logs" },
+    { name = "OTEL_METRICS_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/metrics" },
+    { name = "MANAGEMENT_OTLP_METRICS_EXPORT_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
     { name = "MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
     { name = "MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT_NAME", value = "azure-prod" },
   ] : []

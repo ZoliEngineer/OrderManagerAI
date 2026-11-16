@@ -23,6 +23,8 @@ exporters:
     endpoint: ${env:GRAFANA_CLOUD_OTLP_ENDPOINT}   # e.g. https://otlp-gateway-prod-us-east-0.grafana.net/otlp
     auth:
       authenticator: basicauth/grafanacloud
+  otlphttp/prometheus:
+    endpoint: http://prometheus:9090/api/v1/otlp   # Prometheus OTLP receiver (appends /v1/metrics)
   otlphttp/loki:
     endpoint: http://loki:3100/otlp
 service:
@@ -36,3 +38,7 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [otlphttp/loki, otlphttp/grafanacloud]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/prometheus, otlphttp/grafanacloud]

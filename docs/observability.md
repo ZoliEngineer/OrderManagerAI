@@ -257,6 +257,7 @@ Each step adds **one technology or concept**, ends in a verifiable state and is 
     - *Learn:* push vs pull, temporality, OTLP → Prometheus name translation, `target_info`, exponential → native histograms, exemplars.
     - *Build:* Micrometer OTLP registry next to Prometheus; Collector → Prometheus OTLP receiver; compare the two; move dashboards and rules to OTLP series and stop scraping.
     - *Verify:* rules and tests still pass; `docker stop` right after a request still delivers the last span and metric step.
+    - *Coded (stage 1, push next to pull):* order, risk, execution, mcp and advisor push metrics over OTLP/HTTP every 30 s (cumulative, `base2-exponential-bucket-histogram`); the Prometheus pull path is unchanged. Locally: Collector `metrics` pipeline → Prometheus OTLP receiver (`--web.enable-otlp-receiver`, `--enable-feature=native-histograms`), pushed series carry `job="ordermanager/<service.name>"`, so they sit beside the scraped `job="orderservice"` etc. and can be compared. Azure: `OTEL_METRICS_ENDPOINT` + auth header in the shared Terraform env vars, so Grafana Cloud Mimir receives them directly (the self-hosted Azure Prometheus still scrapes). Not done: comparison results, moving dashboards/rules/SLOs to the OTLP series, stopping the scrape, the shutdown-flush check. marketdata and account have no OTel starter and stay on pull. Not verified live.
 15. **Pyroscope.**
     - *Learn:* sampling profilers, flame graphs, allocation profiles, span profiles.
     - *Build:* Pyroscope + Java agent on execution/risk/order; profile panel.
