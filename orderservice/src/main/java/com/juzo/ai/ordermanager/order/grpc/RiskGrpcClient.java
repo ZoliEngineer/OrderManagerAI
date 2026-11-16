@@ -37,7 +37,7 @@ public class RiskGrpcClient {
                     .check(toProto(req, userId));
             return RiskDecision.from(response);
         } catch (Exception ex) {
-            log.error("Risk Service unavailable — failing safe: {}", ex);
+            log.warn("Risk Service unavailable, failing safe (order rejected)", ex);
             return RiskDecision.systemReject("Risk Service unavailable");
         }
     }
