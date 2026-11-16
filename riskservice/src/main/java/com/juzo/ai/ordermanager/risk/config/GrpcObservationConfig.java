@@ -6,10 +6,7 @@ import net.devh.boot.grpc.server.interceptor.GrpcGlobalServerInterceptor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Makes every gRPC call a server span, continuing the trace the caller sent in the
- * {@code traceparent} metadata header (Order Service -> Risk Service).
- */
+/** Times every gRPC call served here (the {@code grpc.server} metrics), by method and status. */
 @Configuration
 public class GrpcObservationConfig {
 

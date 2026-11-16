@@ -4,13 +4,10 @@ import com.juzo.ai.ordermanager.advisor.agent.AdvisorAgent;
 import com.juzo.ai.ordermanager.advisor.agent.AgentEventSink;
 import com.juzo.ai.ordermanager.advisor.agent.Conversation;
 import com.juzo.ai.ordermanager.advisor.agent.ConversationStore;
-import io.micrometer.observation.Observation;
-import io.micrometer.observation.ObservationRegistry;
 import jakarta.annotation.PreDestroy;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -45,13 +42,11 @@ public class ChatController {
 
     private final ConversationStore store;
     private final AdvisorAgent agent;
-    private final ObservationRegistry observations;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public ChatController(ConversationStore store, AdvisorAgent agent, ObjectProvider<ObservationRegistry> observations) {
+    public ChatController(ConversationStore store, AdvisorAgent agent) {
         this.store = store;
         this.agent = agent;
-        this.observations = observations.getIfAvailable(() -> ObservationRegistry.NOOP);
     }
 
     @PostMapping
@@ -87,11 +82,8 @@ public class ChatController {
     private SseEmitter stream(Conversation conversation, Consumer<AgentEventSink> turn) {
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         SseSink sink = new SseSink(emitter);
-        // The turn runs on its own thread: carry the request's trace over so the agent spans join it.
-        Observation request = observations.getCurrentObservation();
         try {
             executor.submit(() -> {
-                Observation.Scope scope = request == null ? null : request.openScope();
                 try {
                     turn.accept(sink);
                 } catch (RuntimeException e) {
@@ -99,7 +91,6 @@ public class ChatController {
                     sink.emit(AgentEventSink.ERROR, Map.of("message", "Unexpected error: " + e.getMessage()));
                     sink.emit(AgentEventSink.DONE, Map.of("awaitingApproval", false));
                 } finally {
-                    if (scope != null) scope.close();
                     conversation.release();
                     emitter.complete();
                 }

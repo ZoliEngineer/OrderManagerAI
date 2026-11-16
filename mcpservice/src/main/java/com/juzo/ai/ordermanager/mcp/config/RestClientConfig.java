@@ -12,16 +12,16 @@ import java.time.Duration;
 public class RestClientConfig {
 
     @Bean
-    RestClient orderServiceRestClient(RestClient.Builder builder, DownstreamProperties props) {
-        return builder.clone()
+    RestClient orderServiceRestClient(DownstreamProperties props) {
+        return RestClient.builder()
                 .baseUrl(props.orderServiceUrl())
                 .requestFactory(requestFactory(props.connectTimeout(), props.orderReadTimeout()))
                 .build();
     }
 
     @Bean
-    RestClient marketDataRestClient(RestClient.Builder builder, DownstreamProperties props) {
-        return builder.clone()
+    RestClient marketDataRestClient(DownstreamProperties props) {
+        return RestClient.builder()
                 .baseUrl(props.marketDataUrl())
                 .requestFactory(requestFactory(props.connectTimeout(), props.marketDataReadTimeout()))
                 .build();

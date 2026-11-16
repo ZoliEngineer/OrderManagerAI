@@ -44,20 +44,6 @@ locals {
     { name = "AAD_CLIENT_ID", value = azuread_application.app.client_id },
     { name = "CORS_ALLOWED_ORIGINS", value = local.frontend_origin },
   ]
-
-  # Spans go straight to Grafana Cloud (no Collector in Azure). Empty until the grafana_cloud_otlp_* variables are set.
-  # The auth header comes from the secret "grafana-otlp-auth", so every instrumented service must also have it in extra_secrets.
-  otel_enabled = var.grafana_cloud_otlp_auth != ""
-  otel_secrets = local.otel_enabled ? [{ name = "grafana-otlp-auth", value = var.grafana_cloud_otlp_auth }] : []
-  otel_env_vars = local.otel_enabled ? [
-    { name = "OTEL_TRACES_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/traces" },
-    { name = "MANAGEMENT_OPENTELEMETRY_TRACING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
-    { name = "OTEL_LOGS_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/logs" },
-    { name = "OTEL_METRICS_ENDPOINT", value = "${var.grafana_cloud_otlp_endpoint}/v1/metrics" },
-    { name = "MANAGEMENT_OTLP_METRICS_EXPORT_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
-    { name = "MANAGEMENT_OPENTELEMETRY_LOGGING_EXPORT_OTLP_HEADERS_AUTHORIZATION", secret_name = "grafana-otlp-auth" },
-    { name = "MANAGEMENT_OPENTELEMETRY_RESOURCE_ATTRIBUTES_DEPLOYMENT_ENVIRONMENT_NAME", value = "azure-prod" },
-  ] : []
 }
 
 # ── Entra ID App Registration ────────────────────────────
@@ -286,15 +272,14 @@ module "order_service" {
   resource_group = azurerm_resource_group.main.name
   target_port    = 8082
 
-  extra_secrets = concat([
+  extra_secrets = [
     { name = "supabase-db-password", value = var.supabase_db_password },
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-  ], local.otel_secrets)
+  ]
 
   env_vars = concat(
-    local.otel_env_vars,
     [
       { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "supabase-db-password" },
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },
@@ -323,14 +308,13 @@ module "risk_service" {
   target_port    = 9090
   transport      = "http2"
 
-  extra_secrets = concat([
+  extra_secrets = [
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-  ], local.otel_secrets)
+  ]
 
   env_vars = concat(
-    local.otel_env_vars,
     [
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },
       { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
@@ -351,14 +335,13 @@ module "execution_service" {
   target_port      = 8086
   external_ingress = false
 
-  extra_secrets = concat([
+  extra_secrets = [
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-  ], local.otel_secrets)
+  ]
 
   env_vars = concat(
-    local.otel_env_vars,
     [
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },
       { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
@@ -378,10 +361,7 @@ module "mcp_service" {
   resource_group = azurerm_resource_group.main.name
   target_port    = 8084
 
-  extra_secrets = local.otel_secrets
-
   env_vars = concat(
-    local.otel_env_vars,
     local.common_env_vars,
     [
       { name = "ORDER_SERVICE_URL",
@@ -404,12 +384,12 @@ module "advisor_service" {
   resource_group = azurerm_resource_group.main.name
   target_port    = 8085
 
-  extra_secrets = concat(var.anthropic_api_key != "" ? [
+  extra_secrets = var.anthropic_api_key != "" ? [
     { name = "anthropic-api-key", value = var.anthropic_api_key },
-  ] : [], local.otel_secrets)
+  ] : []
+
 
   env_vars = concat(
-    local.otel_env_vars,
     local.common_env_vars,
     [
       { name = "MCP_SERVER_URL",
@@ -455,10 +435,6 @@ module "prometheus" {
     {
       name  = "prometheus-rules"
       value = file("${path.module}/../observability/prometheus/rules/ordermanager.yml")
-    },
-    {
-      name  = "prometheus-rules-slo"
-      value = file("${path.module}/../observability/prometheus/rules/slo.yml")
     },
   ]
 }

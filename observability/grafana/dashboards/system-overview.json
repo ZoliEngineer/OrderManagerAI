@@ -155,254 +155,13 @@
       }
     },
     {
-      "id": 101,
-      "type": "row",
-      "title": "Order SLOs (99% over 7 days; error budget 1%)",
-      "collapsed": false,
-      "gridPos": {
-        "x": 0,
-        "y": 14,
-        "w": 24,
-        "h": 1
-      },
-      "panels": []
-    },
-    {
-      "id": 5,
-      "type": "stat",
-      "title": "Availability SLI (7d)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "1 - ((\n (sum(rate(http_server_requests_seconds_count{job=\"orderservice\", method=\"POST\", uri=\"/api/orders\", status=~\"5..\"}[7d])) or vector(0))\n + (sum(rate(orders_placed_total{job=\"orderservice\", outcome=\"failsafe\"}[7d])) or vector(0))\n) / sum(rate(http_server_requests_seconds_count{job=\"orderservice\", method=\"POST\", uri=\"/api/orders\"}[7d])))",
-          "legendFormat": "availability"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "description": "Good = POST /api/orders that is neither a 5xx nor a risk fail-safe reject. Objective 99%. Covers the data Prometheus holds (up to 7d)."
-    },
-    {
-      "id": 6,
-      "type": "stat",
-      "title": "Availability error budget left (7d)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 6,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "1 - ((\n (sum(rate(http_server_requests_seconds_count{job=\"orderservice\", method=\"POST\", uri=\"/api/orders\", status=~\"5..\"}[7d])) or vector(0))\n + (sum(rate(orders_placed_total{job=\"orderservice\", outcome=\"failsafe\"}[7d])) or vector(0))\n) / sum(rate(http_server_requests_seconds_count{job=\"orderservice\", method=\"POST\", uri=\"/api/orders\"}[7d]))) / 0.01",
-          "legendFormat": "budget left"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "description": "100% = untouched, 0% = exhausted, negative = SLO missed."
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Latency SLI: orders under 800 ms (7d)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "1 - (1 - sum(rate(orders_place_latency_seconds_bucket{job=\"orderservice\", le=\"0.8\"}[7d])) / sum(rate(orders_place_latency_seconds_count{job=\"orderservice\"}[7d])))",
-          "legendFormat": "fast orders"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "description": "Objective 99%. 800 ms is the risk-call deadline and an exact histogram bucket."
-    },
-    {
-      "id": 8,
-      "type": "stat",
-      "title": "Latency error budget left (7d)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 15,
-        "w": 6,
-        "h": 5
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "1 - (1 - sum(rate(orders_place_latency_seconds_bucket{job=\"orderservice\", le=\"0.8\"}[7d])) / sum(rate(orders_place_latency_seconds_count{job=\"orderservice\"}[7d]))) / 0.01",
-          "legendFormat": "budget left"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 9,
-      "type": "timeseries",
-      "title": "Availability burn rate (page > 14 on 1h and 5m; ticket > 6 on 6h and 30m)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "slo:order_availability:burnrate5m",
-          "legendFormat": "5m"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "slo:order_availability:burnrate1h",
-          "legendFormat": "1h"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "slo:order_availability:burnrate6h",
-          "legendFormat": "6h"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "description": "Burn rate 1 = spending the budget exactly as fast as the 7-day window allows."
-    },
-    {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Latency burn rate",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 20,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "slo:order_latency:burnrate5m",
-          "legendFormat": "5m"
-        },
-        {
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "slo:order_latency:burnrate1h",
-          "legendFormat": "1h"
-        },
-        {
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "slo:order_latency:burnrate6h",
-          "legendFormat": "6h"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      }
-    },
-    {
       "id": 102,
       "type": "row",
       "title": "KPIs (dashboard only)",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 14,
         "w": 24,
         "h": 1
       },
@@ -418,7 +177,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 29,
+        "y": 15,
         "w": 12,
         "h": 8
       },
@@ -453,7 +212,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 29,
+        "y": 15,
         "w": 12,
         "h": 8
       },

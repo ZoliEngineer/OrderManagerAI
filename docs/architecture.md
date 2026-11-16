@@ -147,6 +147,7 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 | Containers | Docker | Temurin 21 JRE Alpine per Java service; Node → nginx for the UI. |
 | Hosting | Azure Container Apps | Scale to zero (`min_replicas = 0`). Risk uses `transport = http2` for gRPC; Execution has no ingress. |
 | IaC | Terraform (azurerm + azuread) | Reusable `modules/container-app`; `ignore_changes` on image lets CI own deployments. Remote state in Azure Blob Storage — run `terraform/bootstrap.sh` before the first `terraform apply`. |
+| Observability | Micrometer → Prometheus (pull) → Grafana | Every service exposes `/actuator/prometheus`; Prometheus rules alert on down / 5xx / failsafe rejects. Logs stay on stdout. Local compose stack; Azure copy is opt-in (`observability_enabled`). See [observability.md](observability.md). |
 | Secrets | Azure Key Vault + Container App secrets; `.env` locally | Loaded via `spring.config.import=optional:file:../.env[.properties]`. |
 | Registry | GitHub Container Registry (ghcr.io) | Replaced Azure Container Registry for cost saving. |
 

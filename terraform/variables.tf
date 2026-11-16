@@ -44,25 +44,14 @@ variable "supabase_db_password" {
 }
 
 variable "observability_enabled" {
-  description = "Deploy Prometheus + Grafana and keep scraped services running (min 1 replica). Scale-to-zero services would otherwise be woken by every scrape anyway."
+  description = "Deploy Prometheus + Grafana and keep scraped services running (min 1 replica; a scrape would wake scale-to-zero apps anyway). Off by default: it costs always-on replicas. Turn on with -var observability_enabled=true while testing."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "grafana_admin_password" {
-  description = "Admin password for the Grafana Container App (login user: admin). Set via TF_VAR_grafana_admin_password."
-  sensitive   = true
-}
-
-variable "grafana_cloud_otlp_endpoint" {
-  description = "Grafana Cloud OTLP gateway base URL, e.g. https://otlp-gateway-prod-us-east-0.grafana.net/otlp. Empty = apps export to nothing. Set via TF_VAR_grafana_cloud_otlp_endpoint."
-  type        = string
-  default     = ""
-}
-
-variable "grafana_cloud_otlp_auth" {
-  description = "Full Authorization header value for the OTLP gateway: \"Basic <base64(instanceId:token)>\". Set via TF_VAR_grafana_cloud_otlp_auth."
-  type        = string
+  description = "Admin password for the Grafana Container App (login user: admin). Only needed when observability_enabled=true. Set via TF_VAR_grafana_admin_password."
   sensitive   = true
   default     = ""
 }
+

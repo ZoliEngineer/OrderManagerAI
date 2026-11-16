@@ -10,7 +10,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.micrometer.observation.ObservationRegistry;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,16 +27,13 @@ public class OrderEventConsumer {
     private final RingBuffer<InboundEvent> ringBuffer;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meters;
-    private final ObservationRegistry observations;
     private final Counter failures;
     private final Timer kafkaDelay;
 
-    public OrderEventConsumer(RingBuffer<InboundEvent> ringBuffer, ObjectMapper objectMapper, MeterRegistry meters,
-                              ObservationRegistry observations) {
+    public OrderEventConsumer(RingBuffer<InboundEvent> ringBuffer, ObjectMapper objectMapper, MeterRegistry meters) {
         this.ringBuffer = ringBuffer;
         this.objectMapper = objectMapper;
         this.meters = meters;
-        this.observations = observations;
         this.failures = Counter.builder("execution.events.failed")
                 .description("Order events that could not be parsed or enqueued (currently swallowed and logged)")
                 .register(meters);
@@ -80,8 +76,6 @@ public class OrderEventConsumer {
                 slot.quantity = order.quantity();
                 slot.limitPrice = order.limitPrice();
                 slot.timestampNanos = System.nanoTime();
-                // The listener's observation is current on this thread; the matching thread continues its trace.
-                slot.parentObservation = observations.getCurrentObservation();
             } finally {
                 ringBuffer.publish(seq);
             }

@@ -35,7 +35,7 @@ public class MarketDataTools {
             @McpToolParam(required = false, description = "Ticker symbols to return, e.g. [\"AAPL\", \"MSFT\"]. Omit for all.")
             List<String> tickers) {
         CallerContext caller = CallerContext.from(context);
-        List<StockPrice> prices = caller.call(() -> marketDataClient.getPrices(caller.bearerToken()));
+        List<StockPrice> prices = marketDataClient.getPrices(caller.bearerToken());
         if (tickers == null || tickers.isEmpty()) {
             return prices;
         }

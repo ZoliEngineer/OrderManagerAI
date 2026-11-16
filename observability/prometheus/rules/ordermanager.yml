@@ -15,6 +15,16 @@ groups:
     rules:
       # `and ... > 0.1` is the minimum-volume guard: below ~30 requests per 5 minutes one failure
       # is 50% and would page for nothing. A ratio alone is meaningless without volume.
+      # The "is it up" alert: Prometheus could not scrape the service's /actuator/prometheus.
+      # Risk is not scraped in Azure (gRPC-only ingress); its failures show up as RiskFailSafeRejects.
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is not being scraped (down, or wrong port)"
+
       - alert: HighErrorRate
         expr: job:http_server_errors:ratio5m > 0.05 and job:http_server_requests:rate5m > 0.1
         for: 5m          # must hold for 5 minutes (pending -> firing), so a blip does not alert
