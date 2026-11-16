@@ -374,7 +374,10 @@ module "mcp_service" {
   resource_group = azurerm_resource_group.main.name
   target_port    = 8084
 
+  extra_secrets = local.otel_secrets
+
   env_vars = concat(
+    local.otel_env_vars,
     local.common_env_vars,
     [
       { name = "ORDER_SERVICE_URL",
@@ -397,11 +400,12 @@ module "advisor_service" {
   resource_group = azurerm_resource_group.main.name
   target_port    = 8085
 
-  extra_secrets = var.anthropic_api_key != "" ? [
+  extra_secrets = concat(var.anthropic_api_key != "" ? [
     { name = "anthropic-api-key", value = var.anthropic_api_key },
-  ] : []
+  ] : [], local.otel_secrets)
 
   env_vars = concat(
+    local.otel_env_vars,
     local.common_env_vars,
     [
       { name = "MCP_SERVER_URL",

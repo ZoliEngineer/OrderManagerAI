@@ -35,6 +35,9 @@ class AdvisorAgentTest {
     private final MutableClock clock = new MutableClock(Instant.parse("2026-11-09T10:00:00Z"));
     private final List<Event> events = new ArrayList<>();
     private final AgentEventSink sink = (type, data) -> events.add(new Event(type, data));
+    private final io.micrometer.observation.tck.TestObservationRegistry registry =
+            io.micrometer.observation.tck.TestObservationRegistry.create();
+    private final List<io.micrometer.observation.Observation.Context> stopped = new ArrayList<>();
     private AdvisorAgent agent;
     private Conversation conversation;
 
@@ -45,7 +48,19 @@ class AdvisorAgentTest {
         AdvisorProperties props = new AdvisorProperties(null, "claude-opus-5-5", "high", 64000, 5, 4, true,
                 Duration.ofMinutes(10), Duration.ofHours(2), "http://localhost:8084/mcp", Duration.ofSeconds(5),
                 Duration.ofMinutes(5), null, true);
-        agent = new AdvisorAgent(claude, mcp, new ToolCatalog(props), 4, Duration.ofMinutes(10), clock);
+        registry.observationConfig().observationHandler(new io.micrometer.observation.ObservationHandler<>() {
+            @Override
+            public boolean supportsContext(io.micrometer.observation.Observation.Context context) {
+                return true;
+            }
+
+            @Override
+            public void onStop(io.micrometer.observation.Observation.Context context) {
+                stopped.add(context);
+            }
+        });
+        agent = new AdvisorAgent(claude, mcp, new ToolCatalog(props), 4, Duration.ofMinutes(10), clock,
+                registry, new io.micrometer.core.instrument.simple.SimpleMeterRegistry(), "test-model");
         conversation = new Conversation(UUID.randomUUID(), "advisor-1", clock.instant());
     }
 
@@ -58,6 +73,32 @@ class AdvisorAgentTest {
         assertThat(types()).containsExactly("done");
         assertThat(conversation.history()).hasSize(2);
         assertThat(mcp.calls).isEmpty();
+    }
+
+    @Test
+    void turnProducesGenAiSpansAndNoPromptContent() {
+        claude.respond(message("tool_use", toolUse("t1", "get_market_prices", "{\"tickers\":[\"AAPL\"]}")));
+        claude.respond(message("end_turn", text("Secret answer text.")));
+
+        agent.chat(conversation, "Secret question text", null, TOKEN, sink);
+
+        io.micrometer.observation.tck.TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo("gen_ai.agent.invocation")
+                .that().hasContextualNameEqualTo("invoke_agent advisor")
+                .hasLowCardinalityKeyValue("gen_ai.operation.name", "invoke_agent").hasBeenStopped();
+        io.micrometer.observation.tck.TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo("gen_ai.tool.execution")
+                .that().hasContextualNameEqualTo("execute_tool get_market_prices")
+                .hasLowCardinalityKeyValue("gen_ai.tool.name", "get_market_prices").hasBeenStopped();
+        io.micrometer.observation.tck.TestObservationRegistryAssert.assertThat(registry)
+                .hasObservationWithNameEqualTo("gen_ai.client.operation.duration")
+                .that().hasContextualNameEqualTo("chat test-model")
+                .hasHighCardinalityKeyValueWithKey("gen_ai.usage.input_tokens");
+        // Prompts, answers and tool arguments must never be attached to a span.
+        assertThat(stopped).isNotEmpty().allSatisfy(c -> {
+            String all = c.getLowCardinalityKeyValues().toString() + c.getHighCardinalityKeyValues();
+            assertThat(all).doesNotContain("Secret").doesNotContain("AAPL").doesNotContain(TOKEN);
+        });
     }
 
     @Test

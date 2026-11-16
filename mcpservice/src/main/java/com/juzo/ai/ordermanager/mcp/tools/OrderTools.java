@@ -90,7 +90,7 @@ public class OrderTools {
         }
 
         try {
-            OrderServiceResponse response = orderServiceClient.placeOrder(command, caller.bearerToken());
+            OrderServiceResponse response = caller.call(() -> orderServiceClient.placeOrder(command, caller.bearerToken()));
             boolean accepted = !"REJECTED".equals(response.status());
             PlaceOrderResult result = new PlaceOrderResult(accepted, response.orderId(), response.status(), response.message());
             count("place_order", accepted ? "accepted" : "rejected");
@@ -119,7 +119,7 @@ public class OrderTools {
             throw new IllegalArgumentException("orderId is required");
         }
         try {
-            orderServiceClient.cancelOrder(orderId, caller.bearerToken());
+            caller.run(() -> orderServiceClient.cancelOrder(orderId, caller.bearerToken()));
             CancelOrderResult result = new CancelOrderResult(orderId, true, "Order cancelled");
             count("cancel_order", "cancelled");
             audit(caller, "cancel_order", orderId, "CANCELLED", result.message());
@@ -172,7 +172,7 @@ public class OrderTools {
             return null;
         }
         try {
-            return marketDataClient.getPrices(caller.bearerToken()).stream()
+            return caller.call(() -> marketDataClient.getPrices(caller.bearerToken())).stream()
                     .filter(p -> p.ticker().equals(command.ticker()))
                     .map(StockPrice::price)
                     .findFirst()

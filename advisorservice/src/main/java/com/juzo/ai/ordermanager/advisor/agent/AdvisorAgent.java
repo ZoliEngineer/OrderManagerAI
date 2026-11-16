@@ -12,8 +12,13 @@ import com.juzo.ai.ordermanager.advisor.agent.PendingApproval.PendingCall;
 import com.juzo.ai.ordermanager.advisor.config.AdvisorProperties;
 import com.juzo.ai.ordermanager.advisor.mcp.McpToolGateway;
 import com.juzo.ai.ordermanager.advisor.mcp.ToolCallOutcome;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -46,14 +51,23 @@ public class AdvisorAgent {
     private final int maxIterations;
     private final Duration approvalTtl;
     private final Clock clock;
+    private final ObservationRegistry observations;
+    private final MeterRegistry meters;
+    private final String model;
 
     @Autowired
-    public AdvisorAgent(ClaudeGateway claude, McpToolGateway mcp, ToolCatalog catalog, AdvisorProperties props) {
-        this(claude, mcp, catalog, props.maxToolIterations(), props.approvalTtl(), Clock.systemUTC());
+    public AdvisorAgent(ClaudeGateway claude, McpToolGateway mcp, ToolCatalog catalog, AdvisorProperties props,
+                        ObjectProvider<ObservationRegistry> observations, MeterRegistry meters) {
+        this(claude, mcp, catalog, props.maxToolIterations(), props.approvalTtl(), Clock.systemUTC(),
+                observations.getIfAvailable(() -> ObservationRegistry.NOOP), meters, props.model());
     }
 
     AdvisorAgent(ClaudeGateway claude, McpToolGateway mcp, ToolCatalog catalog, int maxIterations,
-                 Duration approvalTtl, Clock clock) {
+                 Duration approvalTtl, Clock clock, ObservationRegistry observations, MeterRegistry meters,
+                 String model) {
+        this.observations = observations;
+        this.meters = meters;
+        this.model = model;
         this.claude = claude;
         this.mcp = mcp;
         this.catalog = catalog;
@@ -89,7 +103,7 @@ public class AdvisorAgent {
         content.add(ContentBlockParam.ofText(prefix + text));
         conversation.history().add(MessageParam.ofUserOfContentBlockParams(content));
 
-        runLoop(conversation, bearerToken, sink);
+        runTurn(conversation, bearerToken, sink);
     }
 
     /** Applies the user's decisions to the pending tool calls and continues the turn. */
@@ -117,7 +131,7 @@ public class AdvisorAgent {
                         "Not executed: the approval request expired before the user decided.")));
             } else if (decision != null && decision.approved()) {
                 auditDecision(conversation, call, "APPROVED", null);
-                ToolCallOutcome outcome = mcp.callTool(call.name(), call.input(), bearerToken);
+                ToolCallOutcome outcome = callTool(call.name(), call.input(), bearerToken);
                 audit.info("action conversation={} sub={} tool={} input={} error={} result={}", conversation.id(),
                         conversation.ownerSubject(), call.name(), call.input(), outcome.error(), outcome.content());
                 sink.emit(AgentEventSink.TOOL_ACTIVITY, activity(call.name(), call.summary(), outcome));
@@ -134,7 +148,84 @@ public class AdvisorAgent {
         if (expired) {
             sink.emit(AgentEventSink.ERROR, Map.of("message", "The approval request had expired, so nothing was executed."));
         }
-        runLoop(conversation, bearerToken, sink);
+        runTurn(conversation, bearerToken, sink);
+    }
+
+    // ---- Tracing (OpenTelemetry GenAI semantic conventions). Prompts, responses and tool arguments are never recorded.
+
+    /** One user turn = one {@code invoke_agent} span; Claude calls and tool calls are its children. */
+    private void runTurn(Conversation conversation, String bearerToken, AgentEventSink sink) {
+        Observation turn = Observation.createNotStarted("gen_ai.agent.invocation", observations)
+                .contextualName("invoke_agent advisor")
+                .lowCardinalityKeyValue("gen_ai.operation.name", "invoke_agent")
+                .lowCardinalityKeyValue("gen_ai.agent.name", "advisor")
+                .lowCardinalityKeyValue("gen_ai.provider.name", "anthropic")
+                .start();
+        try (Observation.Scope ignored = turn.openScope()) {
+            runLoop(conversation, bearerToken, sink);
+        } catch (RuntimeException e) {
+            turn.error(e);
+            throw e;
+        } finally {
+            turn.stop();
+        }
+    }
+
+    private Message chat(Conversation conversation, ToolCatalog.Snapshot tools, ClaudeGateway.StreamListener listener) {
+        Observation chat = Observation.createNotStarted("gen_ai.client.operation.duration", observations)
+                .contextualName("chat " + model)
+                .lowCardinalityKeyValue("gen_ai.operation.name", "chat")
+                .lowCardinalityKeyValue("gen_ai.provider.name", "anthropic")
+                .lowCardinalityKeyValue("gen_ai.request.model", model)
+                .start();
+        try (Observation.Scope ignored = chat.openScope()) {
+            Message response = claude.send(conversation.history(), tools.tools(), listener);
+            long in = response.usage().inputTokens();
+            long out = response.usage().outputTokens();
+            chat.highCardinalityKeyValue("gen_ai.usage.input_tokens", String.valueOf(in));
+            chat.highCardinalityKeyValue("gen_ai.usage.output_tokens", String.valueOf(out));
+            response.stopReason().ifPresent(r -> chat.highCardinalityKeyValue("gen_ai.response.finish_reasons", r.asString()));
+            recordTokens("input", in);
+            recordTokens("output", out);
+            return response;
+        } catch (RuntimeException e) {
+            chat.error(e);
+            throw e;
+        } finally {
+            chat.stop();
+        }
+    }
+
+    private void recordTokens(String type, long tokens) {
+        DistributionSummary.builder("gen_ai.client.token.usage")
+                .description("Tokens used per Claude request, by direction")
+                .baseUnit("token")
+                .tag("gen_ai.operation.name", "chat")
+                .tag("gen_ai.provider.name", "anthropic")
+                .tag("gen_ai.request.model", model)
+                .tag("gen_ai.token.type", type)
+                .register(meters)
+                .record(tokens);
+    }
+
+    private ToolCallOutcome callTool(String name, Map<String, Object> input, String bearerToken) {
+        Observation tool = Observation.createNotStarted("gen_ai.tool.execution", observations)
+                .contextualName("execute_tool " + name)
+                .lowCardinalityKeyValue("gen_ai.operation.name", "execute_tool")
+                .lowCardinalityKeyValue("gen_ai.tool.name", name)
+                .start();
+        try (Observation.Scope ignored = tool.openScope()) {
+            ToolCallOutcome outcome = mcp.callTool(name, input, bearerToken);
+            if (outcome.error()) {
+                tool.lowCardinalityKeyValue("error.type", "tool_error");
+            }
+            return outcome;
+        } catch (RuntimeException e) {
+            tool.error(e);
+            throw e;
+        } finally {
+            tool.stop();
+        }
     }
 
     private void runLoop(Conversation conversation, String bearerToken, AgentEventSink sink) {
@@ -163,7 +254,7 @@ public class AdvisorAgent {
         for (int iteration = 0; iteration < maxIterations; iteration++) {
             Message response;
             try {
-                response = claude.send(conversation.history(), tools.tools(), listener);
+                response = chat(conversation, tools, listener);
             } catch (RuntimeException e) {
                 log.warn("Claude request failed: {}", e.toString());
                 sink.emit(AgentEventSink.ERROR, Map.of("message", "The advisor could not be reached: " + e.getMessage()));
@@ -202,7 +293,7 @@ public class AdvisorAgent {
                 } else if (tools.requiresApproval(use.name())) {
                     calls.add(new PendingCall(use.id(), use.name(), input, summary, true, null));
                 } else {
-                    ToolCallOutcome outcome = mcp.callTool(use.name(), input, bearerToken);
+                    ToolCallOutcome outcome = callTool(use.name(), input, bearerToken);
                     sink.emit(AgentEventSink.TOOL_ACTIVITY, activity(use.name(), summary, outcome));
                     calls.add(new PendingCall(use.id(), use.name(), input, summary, false, outcome));
                 }

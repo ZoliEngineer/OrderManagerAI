@@ -1,5 +1,7 @@
 package com.juzo.ai.ordermanager.mcp.config;
 
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import io.modelcontextprotocol.common.McpTransportContext;
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
 import org.springframework.ai.mcp.server.common.autoconfigure.properties.McpServerStreamableHttpProperties;
@@ -27,21 +29,29 @@ public class McpTransportConfig {
     public static final String CTX_BEARER_TOKEN = "bearerToken";
     public static final String CTX_SUBJECT = "subject";
     public static final String CTX_CLIENT_ID = "clientId";
+    /** The HTTP server observation of the MCP request; tools run on another thread and re-open it to keep the trace. */
+    public static final String CTX_OBSERVATION = "observation";
 
     @Bean
     WebMvcStreamableServerTransportProvider webMvcStreamableServerTransportProvider(
-            JsonMapper jsonMapper, McpServerStreamableHttpProperties props) {
+            JsonMapper jsonMapper, McpServerStreamableHttpProperties props, ObservationRegistry observations) {
         return WebMvcStreamableServerTransportProvider.builder()
                 .jsonMapper(new JacksonMcpJsonMapper(jsonMapper))
                 .mcpEndpoint(props.getMcpEndpoint())
                 .keepAliveInterval(props.getKeepAliveInterval())
                 .disallowDelete(props.isDisallowDelete())
-                .contextExtractor(request -> extractCallerContext(request.headers().firstHeader(HttpHeaders.AUTHORIZATION)))
+                .contextExtractor(request -> extractCallerContext(
+                        request.headers().firstHeader(HttpHeaders.AUTHORIZATION), observations.getCurrentObservation()))
                 .build();
     }
 
     static McpTransportContext extractCallerContext(String authorizationHeader) {
+        return extractCallerContext(authorizationHeader, null);
+    }
+
+    static McpTransportContext extractCallerContext(String authorizationHeader, Observation current) {
         Map<String, Object> values = new HashMap<>();
+        if (current != null) values.put(CTX_OBSERVATION, current);
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth instanceof JwtAuthenticationToken jwtAuth) {
             values.put(CTX_BEARER_TOKEN, jwtAuth.getToken().getTokenValue());

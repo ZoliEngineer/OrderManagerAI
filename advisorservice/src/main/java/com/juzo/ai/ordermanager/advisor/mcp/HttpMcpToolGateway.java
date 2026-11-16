@@ -5,9 +5,13 @@ import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
 import io.modelcontextprotocol.spec.McpSchema;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +19,9 @@ import java.net.URI;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -31,6 +37,8 @@ public class HttpMcpToolGateway implements McpToolGateway {
     private final String baseUrl;
     private final String endpoint;
     private final Clock clock;
+    /** Trace headers (traceparent) of the calling thread's current span; empty when tracing is off. */
+    private final Supplier<Map<String, String>> traceHeaders;
 
     /** Tool definitions are the same for every user and only change on deploy; cache them briefly. */
     private volatile CachedTools cachedTools;
@@ -38,13 +46,18 @@ public class HttpMcpToolGateway implements McpToolGateway {
     private record CachedTools(List<McpSchema.Tool> tools, Instant expiresAt) {}
 
     @Autowired
-    public HttpMcpToolGateway(AdvisorProperties props) {
-        this(props, Clock.systemUTC());
+    public HttpMcpToolGateway(AdvisorProperties props, ObjectProvider<Tracer> tracer, ObjectProvider<Propagator> propagator) {
+        this(props, Clock.systemUTC(), () -> currentTraceHeaders(tracer.getIfAvailable(), propagator.getIfAvailable()));
     }
 
-    HttpMcpToolGateway(AdvisorProperties props, Clock clock) {
+    HttpMcpToolGateway(AdvisorProperties props) {
+        this(props, Clock.systemUTC(), Map::of);
+    }
+
+    HttpMcpToolGateway(AdvisorProperties props, Clock clock, Supplier<Map<String, String>> traceHeaders) {
         this.props = props;
         this.clock = clock;
+        this.traceHeaders = traceHeaders;
         URI uri = URI.create(props.mcpUrl());
         this.baseUrl = uri.getScheme() + "://" + uri.getRawAuthority();
         this.endpoint = uri.getRawPath() == null || uri.getRawPath().isEmpty() ? "/mcp" : uri.getRawPath();
@@ -78,11 +91,27 @@ public class HttpMcpToolGateway implements McpToolGateway {
         }
     }
 
+    /**
+     * The MCP SDK uses a plain java.net.http client that Spring does not instrument, so the trace context is
+     * injected by hand. It is read here (on the calling thread) because the SDK sends from another thread.
+     */
+    private static Map<String, String> currentTraceHeaders(Tracer tracer, Propagator propagator) {
+        Map<String, String> headers = new HashMap<>();
+        Span span = tracer == null ? null : tracer.currentSpan();
+        if (span != null && propagator != null) {
+            propagator.inject(span.context(), headers, Map::put);
+        }
+        return headers;
+    }
+
     private McpSyncClient open(String bearerToken) {
+        Map<String, String> trace = traceHeaders.get();
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(baseUrl)
                 .endpoint(endpoint)
-                .httpRequestCustomizer((builder, method, uri, body, context) ->
-                        builder.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken))
+                .httpRequestCustomizer((builder, method, uri, body, context) -> {
+                    builder.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + bearerToken);
+                    trace.forEach(builder::setHeader);
+                })
                 .build();
         McpSyncClient client = McpClient.sync(transport)
                 .clientInfo(new McpSchema.Implementation("ordermanager-advisor", "1.0.0"))
