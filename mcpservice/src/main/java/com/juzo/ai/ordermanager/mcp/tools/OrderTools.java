@@ -178,7 +178,7 @@ public class OrderTools {
                     .findFirst()
                     .orElse(null);
         } catch (DownstreamException e) {
-            log.warn("Could not fetch market price for notional guardrail: {}", e.getMessage());
+            log.warn("Could not fetch market price for notional guardrail", e);
             return null;
         }
     }

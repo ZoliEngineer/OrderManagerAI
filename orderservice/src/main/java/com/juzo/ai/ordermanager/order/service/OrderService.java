@@ -148,7 +148,8 @@ public class OrderService {
     private RiskDecision checkRisk(PlaceOrderRequest request, String userId, String bearerToken) {
         RiskDecision decision = riskGrpcClient.check(request, userId, bearerToken);
         if (decision.rejected()) {
-            log.warn("Order rejected by risk check: reason={} message={}", decision.reason(), decision.message());
+            log.info("Order rejected by risk check: reason={} decisionId={} account={} ticker={} message={}",
+                    decision.reason(), decision.decisionId(), request.accountId(), request.ticker(), decision.message());
         }
         return decision;
     }

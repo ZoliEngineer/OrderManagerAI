@@ -2,4 +2,4 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY target/*.jar app.jar
 EXPOSE 8084
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60", "-XX:+ExitOnOutOfMemoryError", "-jar", "app.jar"]

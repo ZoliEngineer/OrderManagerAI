@@ -40,8 +40,8 @@ Common rules, in `application.properties` of every service:
 
 | Service | Metrics |
 |---|---|
-| order | `orders.placed{side,type,outcome=accepted\|rejected\|failsafe}`, `orders.place.latency`, `orders.cancelled{outcome}`, `grpc.client` timers (Risk calls) |
-| risk | `risk.checks{decision,reason}`, `risk.evaluate.latency`, `risk.buying_power.lookups{result}`, `risk.price.cache.size`, `risk.price.kafka.delay`, `grpc.server` timers |
+| order | `orders.placed{side,type,outcome=accepted\|rejected\|failsafe}`, `orders.place.latency`, `orders.cancelled{outcome}`, `orders.risk.failsafe{cause}` (gRPC status), `orders.risk.call.latency{outcome}`, `grpc.client` timers |
+| risk | `risk.checks{decision,reason}`, `risk.evaluate.latency`, `risk.buying_power.lookups{result}`, `risk.price.lookups{result}`, `risk.price.cache.size`, `risk.price.kafka.delay`, `grpc.server` timers |
 | marketdata | `marketdata.ticks`, `marketdata.stocks.tracked`, `marketdata.websocket.sessions`, `marketdata.publish{target,outcome}` |
 | execution | `execution.events.consumed{type}`, `execution.events.failed`, `execution.ringbuffer.remaining`, `execution.ringbuffer.wait`, `execution.kafka.delay` |
 | account | `account.buying_power.cache{operation,result}`, `account.cache.warmed.accounts` |
@@ -65,13 +65,32 @@ Common rules, in `application.properties` of every service:
   - Prometheus has no persistent storage (7-day retention on the container filesystem). A restart loses history.
   - `/actuator/prometheus` is unauthenticated on the public services. Metrics carry no ids or PII, but add a scrape token before this is more than a test environment.
 
-## Remaining work
+## Why did my order fail the risk check?
+An order that comes back rejected has one of these reasons. The first column is what the API returns.
 
-| Item | Why it matters for "why is it failing" |
-|---|---|
-| Stack traces kept in logs. A Throwable passed into a `{}` placeholder, or logged via `e.toString()` / `getMessage()`, loses its frames (e.g. `RiskGrpcClient`, `FinnhubMarketStatusService`, `AdvisorAgent`, `HttpMcpToolGateway`, `FinnhubPriceSource`). | The log is the only place the reason lives |
-| Log levels: a risk rejection is INFO, a fail-safe is WARN, WS disconnects are DEBUG. `OrderEventConsumer` should not swallow failures silently (it counts them in `execution.events.failed`). | ERROR then means "an engineer must act" |
-| Health groups: readiness includes db / redis / kafka, liveness includes no external dependencies. | `/actuator/health` tells you which dependency is down |
-| JVM flags in the Dockerfiles: `-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError`. | Default heap on 0.5 GiB containers is about 128 MB, so OOMs look like random failures |
-| Graceful shutdown (`server.shutdown=graceful`) and Disruptor drain. | No lost requests on scale-down |
-| Execution never wakes in Azure (`min_replicas = 0`, no ingress, no scale rule). A Kafka scale rule on `order.created` would fix it. | Otherwise orders are accepted and never matched |
+| Reason | Meaning | Where to look |
+|---|---|---|
+| `RISK_UNAVAILABLE` | The order service got no answer from Risk (fail-safe). The message ends with the gRPC status and elapsed ms. | `orders.risk.failsafe{cause}`: `DEADLINE_EXCEEDED` = slow or **cold start** (Risk runs at `min_replicas = 0`, and the deadline is 800 ms); `UNAVAILABLE` = down or unreachable; `INTERNAL` = Risk threw, see its log |
+| `BUYING_POWER_UNAVAILABLE` | Risk answered, but the account's Redis key `account:buying-power:<id>` is missing (24 h TTL, written only by the Account Service) | `risk.buying_power.lookups{result="miss"}`; Risk log `Buying power not found in cache` |
+| `PRICE_UNAVAILABLE` | Market order and no cached price for the ticker | `risk.price.lookups{result="miss"}`, `risk.price.cache.size` |
+| `INSUFFICIENT_FUNDS` | Order value exceeds the **cached** buying power, which can be stale | The Risk decision log line carries both numbers in `message` |
+
+Every Risk decision is one log line with the `decisionId` that the order service also logs (`Order rejected by risk check: ... decisionId=...`), so the two services' logs can be matched by that id:
+```bash
+az containerapp logs show -n ordermanagerai-prod-risk-svc  -g <resource-group> --tail 200 | grep "Risk decision"
+az containerapp logs show -n ordermanagerai-prod-order-svc -g <resource-group> --tail 200 | grep -E "Risk call failed|rejected by risk"
+```
+Risk is not scraped in Azure, so there the order-side metrics (`orders.risk.*`) and the logs are what you have. Locally, all of them are in Prometheus. The *Order Flow* dashboard has panels for fail-safe cause, call latency and price lookups.
+
+## Failure diagnostics built into the services
+
+- **Stack traces in logs:** exceptions are passed to the logger as the last argument, never through `e.toString()` / `getMessage()` or a `{}` placeholder, so the frames are kept. The exception is the Finnhub calls with the API key in the URL: those log the exception type and a sanitized message (`sanitizeMessage`), not the raw exception.
+- **Log levels:** a risk rejection is INFO (an expected business outcome), the Risk fail-safe is WARN with a stack trace, ERROR means an engineer must act.
+- **Health:** `/actuator/health` lists each dependency's status (`show-components=always`: db, redis, ...), so a DOWN dependency is visible without connection details. There are no liveness/readiness groups because nothing in Azure consumes them (no container probes).
+- **JVM:** `-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError` in every Dockerfile. The default heap on a 0.5 GiB container is small, and an OOM now ends the process instead of leaving it half-working.
+- **Shutdown:** `server.shutdown=graceful` with a 20 s phase timeout, so in-flight requests finish on scale-down and deploys.
+
+## Known gaps
+- Execution never wakes in Azure (`min_replicas = 0`, no ingress, no scale rule): orders are accepted and not matched until it is running. A Kafka (KEDA) scale rule on `order.created` would fix it.
+- `OrderEventConsumer` logs and counts failed events (`execution.events.failed`) but does not dead-letter them.
+- No Disruptor drain on shutdown.

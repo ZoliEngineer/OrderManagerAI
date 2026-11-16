@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -44,6 +45,8 @@ public class PriceCache {
     private final KafkaListenerEndpointRegistry listenerRegistry;
     private final String topic;
     private final Timer kafkaDelay;
+    private final Counter priceHits;
+    private final Counter priceMisses;
 
     public PriceCache(ConsumerFactory<String, String> consumerFactory,
                       KafkaListenerEndpointRegistry listenerRegistry,
@@ -56,6 +59,8 @@ public class PriceCache {
         Gauge.builder("risk.price.cache.size", prices, Map::size)
                 .description("Tickers currently held in the in-memory price cache")
                 .register(meters);
+        this.priceHits = Counter.builder("risk.price.lookups").tag("result", "hit").register(meters);
+        this.priceMisses = Counter.builder("risk.price.lookups").tag("result", "miss").register(meters);
         this.kafkaDelay = Timer.builder("risk.price.kafka.delay")
                 .description("Producer timestamp to cache update: how stale the cache runs behind live prices")
                 .publishPercentileHistogram()
@@ -140,9 +145,11 @@ public class PriceCache {
     public Optional<BigDecimal> get(String ticker) {
         Optional<BigDecimal> result = Optional.ofNullable(prices.get(ticker));
         if (result.isPresent()) {
+            priceHits.increment();
             log.debug("Price cache hit for ticker={}, value={}", ticker, result.get());
         } else {
-            log.warn("Price not found in cache for ticker={}", ticker);
+            priceMisses.increment();
+            log.warn("Price not found in cache for ticker={} ({} tickers cached)", ticker, prices.size());
         }
         return result;
     }

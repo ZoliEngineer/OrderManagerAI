@@ -37,11 +37,11 @@ public class BuyingPowerCache {
         String value = redis.opsForValue().get(keyPrefix + accountId);
         if (value == null) {
             misses.increment();
-            log.warn("Buying power not found in cache for account={}", accountId);
+            log.warn("Buying power not found in cache for account={} (key expired or never written by the Account Service)", accountId);
             return Optional.empty();
         }
         hits.increment();
-        log.info("Buying power cache hit for account={}, value={}", accountId, value);
+        log.debug("Buying power cache hit for account={}, value={}", accountId, value);
         return Optional.of(new BigDecimal(value));
     }
 }

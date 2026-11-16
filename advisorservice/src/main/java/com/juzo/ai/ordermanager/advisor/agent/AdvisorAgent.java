@@ -160,7 +160,7 @@ public class AdvisorAgent {
         try {
             tools = catalog.build(mcp.listTools(bearerToken));
         } catch (RuntimeException e) {
-            log.warn("Could not list MCP tools: {}", e.toString());
+            log.warn("Could not list MCP tools", e);
             sink.emit(AgentEventSink.ERROR, Map.of("message", "The trading tools are unavailable right now (" + e.getMessage() + ")."));
             sink.emit(AgentEventSink.DONE, Map.of("awaitingApproval", false));
             return;
@@ -185,7 +185,7 @@ public class AdvisorAgent {
                 recordTokens("input", response.usage().inputTokens());
                 recordTokens("output", response.usage().outputTokens());
             } catch (RuntimeException e) {
-                log.warn("Claude request failed: {}", e.toString());
+                log.warn("Claude request failed", e);
                 sink.emit(AgentEventSink.ERROR, Map.of("message", "The advisor could not be reached: " + e.getMessage()));
                 sink.emit(AgentEventSink.DONE, Map.of("awaitingApproval", false));
                 return;

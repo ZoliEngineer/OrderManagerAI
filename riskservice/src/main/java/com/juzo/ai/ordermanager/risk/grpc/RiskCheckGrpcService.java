@@ -1,6 +1,7 @@
 package com.juzo.ai.ordermanager.risk.grpc;
 
 import com.juzo.ai.ordermanager.risk.service.RiskEvaluationService;
+import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
 import net.devh.boot.grpc.server.service.GrpcService;
 import org.slf4j.Logger;
@@ -19,15 +20,24 @@ public class RiskCheckGrpcService extends RiskCheckGrpc.RiskCheckImplBase {
 
     @Override
     public void check(RiskCheckRequest request, StreamObserver<RiskCheckResponse> responseObserver) {
-        log.info("Risk check: account={} user={} ticker={} side={} type={} qty={}",
-                request.getAccountId(), request.getUserId(), request.getTicker(),
-                request.getSide(), request.getType(), request.getQuantity());
+        long start = System.nanoTime();
+        RiskCheckResponse response;
+        try {
+            response = riskEvaluationService.evaluate(request);
+        } catch (RuntimeException e) {
+            // e.g. Redis down. Without this the caller only sees UNKNOWN and Risk logs nothing.
+            log.error("Risk evaluation failed: account={} ticker={} side={} type={} qty={}",
+                    request.getAccountId(), request.getTicker(), request.getSide(), request.getType(),
+                    request.getQuantity(), e);
+            responseObserver.onError(Status.INTERNAL.withDescription("Risk evaluation failed").asRuntimeException());
+            return;
+        }
 
-        RiskCheckResponse response = riskEvaluationService.evaluate(request);
-
-        log.info("Risk decision={} reason={} account={} ticker={}",
-                response.getDecision(), response.getReason(),
-                request.getAccountId(), request.getTicker());
+        // One line per decision with everything needed to explain it. decisionId is also returned to the caller.
+        log.info("Risk decision={} reason={} decisionId={} account={} ticker={} side={} type={} qty={} elapsedMs={} message={}",
+                response.getDecision(), response.getReason(), response.getDecisionId(), request.getAccountId(),
+                request.getTicker(), request.getSide(), request.getType(), request.getQuantity(),
+                (System.nanoTime() - start) / 1_000_000, response.getMessage());
 
         responseObserver.onNext(response);
         responseObserver.onCompleted();

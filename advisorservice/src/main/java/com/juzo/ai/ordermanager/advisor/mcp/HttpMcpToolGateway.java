@@ -72,7 +72,7 @@ public class HttpMcpToolGateway implements McpToolGateway {
                     .collect(Collectors.joining("\n"));
             return new ToolCallOutcome(text, Boolean.TRUE.equals(result.isError()));
         } catch (RuntimeException e) {
-            log.warn("MCP tool call {} failed: {}", name, e.toString());
+            log.warn("MCP tool call {} failed", name, e);
             return ToolCallOutcome.failed("Tool call failed before a result was received (" + e.getMessage()
                     + "). For place_order the order status is unknown: check the order list instead of retrying.");
         }

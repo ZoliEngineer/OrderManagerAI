@@ -103,13 +103,13 @@ public class FinnhubPriceSource implements PriceUpdateSource {
                     try {
                         return OBJECT_MAPPER.readTree(json);
                     } catch (JsonProcessingException e) {
-                        log.warn("Failed to parse quote JSON for {}: {}", ticker, e.getMessage());
+                        log.warn("Failed to parse quote JSON for {}", ticker, e);
                         return null;
                     }
                 })
                 .doOnNext(node -> applyQuote(ticker, node))
                 .onErrorResume(e -> {
-                    log.warn("Failed to fetch initial quote for {}: {}", ticker, e.getMessage());
+                    log.warn("Failed to fetch initial quote for {}: {}: {}", ticker, e.getClass().getSimpleName(), sanitizeMessage(e.getMessage()));
                     return Mono.empty();
                 })
             )
@@ -160,7 +160,7 @@ public class FinnhubPriceSource implements PriceUpdateSource {
                 .doOnNext(this::handleMessage))
             .then()
         )
-        .doOnError(e -> log.error("Finnhub WebSocket error: {}", sanitizeMessage(e.getMessage())))
+        .doOnError(e -> log.error("Finnhub WebSocket error: {}: {}", e.getClass().getSimpleName(), sanitizeMessage(e.getMessage())))
         .retryWhen(Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(5))
             .maxBackoff(Duration.ofSeconds(60))
             .doBeforeRetry(sig -> log.warn("Reconnecting to Finnhub (attempt {})", sig.totalRetries() + 1)))
@@ -178,7 +178,7 @@ public class FinnhubPriceSource implements PriceUpdateSource {
                                    trade.path(FIELD_PRICE).asDouble());
             }
         } catch (JsonProcessingException e) {
-            log.warn("Failed to parse Finnhub message: {}", e.getMessage());
+            log.warn("Failed to parse Finnhub message", e);
         }
     }
 

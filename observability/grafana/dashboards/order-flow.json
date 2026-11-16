@@ -231,6 +231,101 @@
       }
     },
     {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Risk fail-safe by cause (per s)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (cause) (rate(orders_risk_failsafe_total[$__rate_interval]))",
+          "legendFormat": "{{cause}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "Why the order service rejected an order without a Risk answer. DEADLINE_EXCEEDED = slow or cold-starting Risk (deadline 800 ms); UNAVAILABLE = Risk down or unreachable; UNAUTHENTICATED = token problem; INTERNAL = Risk threw (see its log); OTHER = not a gRPC status."
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Risk call round trip p95 by result",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, outcome) (rate(orders_risk_call_latency_seconds_bucket[$__rate_interval])))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "description": "Order -> Risk gRPC round trip as seen by the order service. Values near 0.8 s are close to the deadline."
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Price lookups in risk (hit vs miss)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (result) (rate(risk_price_lookups_total[$__rate_interval]))",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "A miss on a market order gives PRICE_UNAVAILABLE: no price cached for the ticker yet (cold start or no ticks)."
+    },
+    {
       "id": 7,
       "type": "timeseries",
       "title": "MCP tool calls by outcome (per s)",
@@ -240,7 +335,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -270,7 +365,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -309,7 +404,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 32,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -366,7 +461,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 32,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -397,7 +492,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 40,
+        "y": 56,
         "w": 24,
         "h": 8
       },
