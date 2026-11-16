@@ -18,7 +18,13 @@ public record RiskDecision(
         );
     }
 
+    /** True when the rejection came from our own fail-safe (Risk unreachable), not from a risk rule. */
+    public boolean failSafe() {
+        return "system".equals(decisionId);
+    }
+
     public static RiskDecision systemReject(String message) {
-        return new RiskDecision(true, "BUYING_POWER_UNAVAILABLE", message, "system");
+        // Own reason code: a fail-safe must not look like a genuine "buying power not cached" rejection from Risk.
+        return new RiskDecision(true, "RISK_UNAVAILABLE", message, "system");
     }
 }

@@ -6,12 +6,17 @@ import com.juzo.ai.ordermanager.execution.engine.InboundEvent;
 import com.juzo.ai.ordermanager.execution.engine.OrderType;
 import com.juzo.ai.ordermanager.execution.engine.Side;
 import com.lmax.disruptor.RingBuffer;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.UUID;
 
 @Component
@@ -21,10 +26,25 @@ public class OrderEventConsumer {
 
     private final RingBuffer<InboundEvent> ringBuffer;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meters;
+    private final Counter failures;
+    private final Timer kafkaDelay;
 
-    public OrderEventConsumer(RingBuffer<InboundEvent> ringBuffer, ObjectMapper objectMapper) {
+    public OrderEventConsumer(RingBuffer<InboundEvent> ringBuffer, ObjectMapper objectMapper, MeterRegistry meters) {
         this.ringBuffer = ringBuffer;
         this.objectMapper = objectMapper;
+        this.meters = meters;
+        this.failures = Counter.builder("execution.events.failed")
+                .description("Order events that could not be parsed or enqueued (currently swallowed and logged)")
+                .register(meters);
+        this.kafkaDelay = Timer.builder("execution.kafka.delay")
+                .description("Producer timestamp to consumer receipt for order events")
+                .publishPercentileHistogram()
+                .register(meters);
+        // Free slots in the 65,536-slot ring: a value near 0 means the matching thread cannot keep up.
+        Gauge.builder("execution.ringbuffer.remaining", ringBuffer, RingBuffer::remainingCapacity)
+                .description("Free slots in the Disruptor ring buffer")
+                .register(meters);
     }
 
     @KafkaListener(
@@ -32,6 +52,10 @@ public class OrderEventConsumer {
             groupId = "${app.kafka.consumer-group.order-events}"
     )
     public void onOrderEvent(ConsumerRecord<String, String> record) {
+        long delayMs = System.currentTimeMillis() - record.timestamp();
+        if (delayMs >= 0) {
+            kafkaDelay.record(Duration.ofMillis(delayMs));
+        }
         try {
             KafkaOrderEvent event = objectMapper.readValue(record.value(), KafkaOrderEvent.class);
             KafkaOrderEvent.KafkaOrder order = event.order();
@@ -55,7 +79,13 @@ public class OrderEventConsumer {
             } finally {
                 ringBuffer.publish(seq);
             }
+            Counter.builder("execution.events.consumed")
+                    .description("Order events enqueued onto the ring buffer, by event type")
+                    .tag("type", event.eventType().toLowerCase())
+                    .register(meters)
+                    .increment();
         } catch (Exception e) {
+            failures.increment();
             log.error("Failed to process order event key={}", record.key(), e);
         }
     }

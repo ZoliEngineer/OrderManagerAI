@@ -35,6 +35,8 @@ class AdvisorAgentTest {
     private final MutableClock clock = new MutableClock(Instant.parse("2026-11-09T10:00:00Z"));
     private final List<Event> events = new ArrayList<>();
     private final AgentEventSink sink = (type, data) -> events.add(new Event(type, data));
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meters =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
     private AdvisorAgent agent;
     private Conversation conversation;
 
@@ -45,7 +47,7 @@ class AdvisorAgentTest {
         AdvisorProperties props = new AdvisorProperties(null, "claude-opus-5-5", "high", 64000, 5, 4, true,
                 Duration.ofMinutes(10), Duration.ofHours(2), "http://localhost:8084/mcp", Duration.ofSeconds(5),
                 Duration.ofMinutes(5), null, true);
-        agent = new AdvisorAgent(claude, mcp, new ToolCatalog(props), 4, Duration.ofMinutes(10), clock);
+        agent = new AdvisorAgent(claude, mcp, new ToolCatalog(props), 4, Duration.ofMinutes(10), clock, meters, "test-model");
         conversation = new Conversation(UUID.randomUUID(), "advisor-1", clock.instant());
     }
 
@@ -58,6 +60,18 @@ class AdvisorAgentTest {
         assertThat(types()).containsExactly("done");
         assertThat(conversation.history()).hasSize(2);
         assertThat(mcp.calls).isEmpty();
+    }
+
+    @Test
+    void tokenUsageIsCountedPerDirectionWithoutPromptText() {
+        claude.respond(message("end_turn", text("Secret answer text.")));
+
+        agent.chat(conversation, "Secret question text", null, TOKEN, sink);
+
+        assertThat(meters.find("gen_ai.client.token.usage").tag("gen_ai.token.type", "input").summary()).isNotNull();
+        assertThat(meters.find("gen_ai.client.token.usage").tag("gen_ai.token.type", "output").summary()).isNotNull();
+        assertThat(meters.getMeters()).allSatisfy(m -> assertThat(m.getId().getTags().toString())
+                .doesNotContain("Secret").doesNotContain(TOKEN));
     }
 
     @Test

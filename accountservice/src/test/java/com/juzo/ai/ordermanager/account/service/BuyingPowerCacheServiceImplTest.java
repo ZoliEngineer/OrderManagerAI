@@ -32,7 +32,7 @@ class BuyingPowerCacheServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        cacheService = new BuyingPowerCacheServiceImpl(redis, "account:buying-power:", 24);
+        cacheService = new BuyingPowerCacheServiceImpl(redis, "account:buying-power:", 24, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test

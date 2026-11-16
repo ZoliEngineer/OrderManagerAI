@@ -36,7 +36,8 @@ public class McpTransportConfig {
                 .mcpEndpoint(props.getMcpEndpoint())
                 .keepAliveInterval(props.getKeepAliveInterval())
                 .disallowDelete(props.isDisallowDelete())
-                .contextExtractor(request -> extractCallerContext(request.headers().firstHeader(HttpHeaders.AUTHORIZATION)))
+                .contextExtractor(request -> extractCallerContext(
+                        request.headers().firstHeader(HttpHeaders.AUTHORIZATION)))
                 .build();
     }
 

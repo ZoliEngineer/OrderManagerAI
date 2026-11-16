@@ -17,6 +17,10 @@ import org.springframework.web.reactive.socket.WebSocketMessage;
 import org.springframework.web.reactive.socket.WebSocketSession;
 
 import reactor.core.publisher.Flux;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
@@ -29,18 +33,24 @@ public class MarketDataWebSocketHandler implements WebSocketHandler {
     private final ReactiveRedisMessageListenerContainer listenerContainer;
     private final String redisChannel;
     private final ReactiveJwtDecoder jwtDecoder;
+    private final AtomicInteger activeSessions = new AtomicInteger();
 
     public MarketDataWebSocketHandler(
             ReactiveRedisMessageListenerContainer listenerContainer,
             @Value("${app.redis.channel.market-prices}") String redisChannel,
-            ReactiveJwtDecoder jwtDecoder) {
+            ReactiveJwtDecoder jwtDecoder,
+            MeterRegistry meters) {
         this.listenerContainer = listenerContainer;
         this.redisChannel = redisChannel;
         this.jwtDecoder = jwtDecoder;
+        Gauge.builder("marketdata.websocket.sessions", activeSessions, AtomicInteger::get)
+                .description("Open browser WebSocket sessions")
+                .register(meters);
     }
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
+        activeSessions.incrementAndGet();
         log.info("WebSocket connection established: sessionId={}", session.getId());
 
         // Sink bridges inbound auth validation to the outbound stream.
@@ -75,7 +85,10 @@ public class MarketDataWebSocketHandler implements WebSocketHandler {
         return session.send(outbound)
                 .and(inboundProcessing)
                 .doOnError(e -> log.error("WebSocket session error: sessionId={}", session.getId(), e))
-                .doFinally(signal -> log.info("WebSocket connection closed: sessionId={}, signal={}", session.getId(), signal))
+                .doFinally(signal -> {
+                    activeSessions.decrementAndGet();
+                    log.info("WebSocket connection closed: sessionId={}, signal={}", session.getId(), signal);
+                })
                 .onErrorResume(e -> {
                     log.warn("WebSocket auth failed: sessionId={}", session.getId(), e);
                     return session.close(CloseStatus.POLICY_VIOLATION);

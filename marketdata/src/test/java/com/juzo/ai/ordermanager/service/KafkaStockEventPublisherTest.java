@@ -31,7 +31,7 @@ class KafkaStockEventPublisherTest {
 
     @BeforeEach
     void setUp() {
-        publisher = new KafkaStockEventPublisher(kafkaTemplate, new ObjectMapper(), TOPIC);
+        publisher = new KafkaStockEventPublisher(kafkaTemplate, new ObjectMapper(), TOPIC, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test

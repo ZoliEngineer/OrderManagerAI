@@ -24,7 +24,7 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/index.html", "/app.js", "/styles.css", "/favicon.ico",
-                                "/config.json", "/actuator/health", "/error").permitAll()
+                                "/config.json", "/actuator/health", "/actuator/prometheus", "/error").permitAll()
                         .requestMatchers("/api/**").hasAuthority(REQUIRED_SCOPE)
                         .anyRequest().denyAll()
                 )

@@ -26,13 +26,32 @@ class RiskEvaluationServiceTest {
     private PriceCache priceCache;
 
     private RiskEvaluationService service;
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meters =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     private static final String ACCOUNT_ID = UUID.randomUUID().toString();
     private static final String TICKER = "AAPL";
 
     @BeforeEach
     void setUp() {
-        service = new RiskEvaluationService(buyingPowerCache, priceCache);
+        service = new RiskEvaluationService(buyingPowerCache, priceCache, meters);
+    }
+
+    @Test
+    void evaluate_recordsDecisionCounterAndLatency() {
+        when(priceCache.get(TICKER)).thenReturn(Optional.of(new BigDecimal("100.00")));
+        when(buyingPowerCache.get(any(UUID.class)))
+                .thenReturn(Optional.of(new BigDecimal("2000.00")))
+                .thenReturn(Optional.of(new BigDecimal("10.00")));
+
+        service.evaluate(marketBuyRequest("10"));   // approved
+        service.evaluate(marketBuyRequest("10"));   // 1000 > 10 => insufficient funds
+
+        assertThat(meters.get("risk.checks").tag("decision", "approved").tag("reason", "reason_unspecified")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meters.get("risk.checks").tag("decision", "rejected").tag("reason", "insufficient_funds")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meters.get("risk.evaluate.latency").timer().count()).isEqualTo(2);
     }
 
     @Test

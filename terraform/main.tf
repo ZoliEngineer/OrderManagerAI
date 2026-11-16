@@ -36,10 +36,13 @@ locals {
   frontend_origin = "https://${local.prefix}-frontend.${azurerm_container_app_environment.main.default_domain}"
 
   # Env vars shared by every backend service.
+  # Services that Prometheus scrapes stay at 1 replica; otherwise every scrape would wake them anyway.
+  scraped_min_replicas = var.observability_enabled ? 1 : 0
+
   common_env_vars = [
-    { name = "AAD_TENANT_ID",        value = data.azurerm_client_config.current.tenant_id },
-    { name = "AAD_CLIENT_ID",        value = azuread_application.app.client_id             },
-    { name = "CORS_ALLOWED_ORIGINS", value = local.frontend_origin                         },
+    { name = "AAD_TENANT_ID", value = data.azurerm_client_config.current.tenant_id },
+    { name = "AAD_CLIENT_ID", value = azuread_application.app.client_id },
+    { name = "CORS_ALLOWED_ORIGINS", value = local.frontend_origin },
   ]
 }
 
@@ -194,6 +197,7 @@ resource "azurerm_container_app_environment" "main" {
 # ── Container Apps ───────────────────────────────────────
 
 module "marketdata" {
+  min_replicas   = local.scraped_min_replicas
   source         = "./modules/container-app"
   name           = "${local.prefix}-marketdata"
   container_name = "marketdata"
@@ -204,8 +208,8 @@ module "marketdata" {
 
   extra_secrets = concat(
     [
-      { name = "redis-password",   value = var.redis_password           },
-      { name = "kafka-api-key",    value = var.kafka_cluster_api_key    },
+      { name = "redis-password", value = var.redis_password },
+      { name = "kafka-api-key", value = var.kafka_cluster_api_key },
       { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
     ],
     var.finnhub_api_key != "" ? [{ name = "finnhub-api-key", value = var.finnhub_api_key }] : []
@@ -213,8 +217,8 @@ module "marketdata" {
 
   env_vars = concat(
     [
-      { name = "REDIS_PASSWORD",           secret_name = "redis-password"   },
-      { name = "KAFKA_CLUSTER_API_KEY",    secret_name = "kafka-api-key"    },
+      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
+      { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
       { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars,
@@ -237,6 +241,7 @@ module "frontend" {
 }
 
 module "account_service" {
+  min_replicas   = local.scraped_min_replicas
   source         = "./modules/container-app"
   name           = "${local.prefix}-acct-svc"
   container_name = "account-service"
@@ -245,20 +250,21 @@ module "account_service" {
   target_port    = 8081
 
   extra_secrets = [
-    { name = "redis-password",    value = var.redis_password   },
-    { name = "neon-db-password",  value = var.neon_db_password },
+    { name = "redis-password", value = var.redis_password },
+    { name = "neon-db-password", value = var.neon_db_password },
   ]
 
   env_vars = concat(
     [
       { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "neon-db-password" },
-      { name = "REDIS_PASSWORD",             secret_name = "redis-password"   },
+      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
     ],
     local.common_env_vars
   )
 }
 
 module "order_service" {
+  min_replicas   = local.scraped_min_replicas
   source         = "./modules/container-app"
   name           = "${local.prefix}-order-svc"
   container_name = "order-service"
@@ -267,27 +273,27 @@ module "order_service" {
   target_port    = 8082
 
   extra_secrets = [
-    { name = "supabase-db-password", value = var.supabase_db_password      },
-    { name = "redis-password",       value = var.redis_password             },
-    { name = "kafka-api-key",        value = var.kafka_cluster_api_key      },
-    { name = "kafka-api-secret",     value = var.kafka_cluster_api_secret   },
+    { name = "supabase-db-password", value = var.supabase_db_password },
+    { name = "redis-password", value = var.redis_password },
+    { name = "kafka-api-key", value = var.kafka_cluster_api_key },
+    { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
   ]
 
   env_vars = concat(
     [
       { name = "SPRING_DATASOURCE_PASSWORD", secret_name = "supabase-db-password" },
-      { name = "REDIS_PASSWORD",             secret_name = "redis-password"        },
-      { name = "KAFKA_CLUSTER_API_KEY",      secret_name = "kafka-api-key"         },
-      { name = "KAFKA_CLUSTER_API_SECRET",   secret_name = "kafka-api-secret"      },
+      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
+      { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
+      { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars,
     [
       { name = "APP_SERVICES_MARKET_DATA_SERVICE_BASE_URL",
-        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
+      value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
       { name = "GRPC_CLIENT_RISK_SERVICE_ADDRESS",
-        value = "dns:///${local.prefix}-risk-svc.${azurerm_container_app_environment.main.default_domain}:443" },
+      value = "dns:///${local.prefix}-risk-svc.${azurerm_container_app_environment.main.default_domain}:443" },
       { name = "GRPC_CLIENT_RISK_SERVICE_NEGOTIATION_TYPE",
-        value = "tls" },
+      value = "tls" },
     ]
   )
 }
@@ -303,40 +309,42 @@ module "risk_service" {
   transport      = "http2"
 
   extra_secrets = [
-    { name = "redis-password",   value = var.redis_password           },
-    { name = "kafka-api-key",    value = var.kafka_cluster_api_key    },
+    { name = "redis-password", value = var.redis_password },
+    { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
   ]
 
   env_vars = concat(
     [
-      { name = "REDIS_PASSWORD",           secret_name = "redis-password"   },
-      { name = "KAFKA_CLUSTER_API_KEY",    secret_name = "kafka-api-key"    },
+      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
+      { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
       { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars
   )
 }
 
-# Kafka-only service — no HTTP server, so ingress is disabled.
+# Kafka-driven; its only HTTP endpoint is actuator (port 8086), so ingress is internal-only (Prometheus scrapes it).
 module "execution_service" {
-  source         = "./modules/container-app"
-  name           = "${local.prefix}-exec-svc"
-  container_name = "execution-service"
-  environment_id = azurerm_container_app_environment.main.id
-  resource_group = azurerm_resource_group.main.name
-  enable_ingress = false
+  min_replicas     = local.scraped_min_replicas
+  source           = "./modules/container-app"
+  name             = "${local.prefix}-exec-svc"
+  container_name   = "execution-service"
+  environment_id   = azurerm_container_app_environment.main.id
+  resource_group   = azurerm_resource_group.main.name
+  target_port      = 8086
+  external_ingress = false
 
   extra_secrets = [
-    { name = "redis-password",   value = var.redis_password           },
-    { name = "kafka-api-key",    value = var.kafka_cluster_api_key    },
+    { name = "redis-password", value = var.redis_password },
+    { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
   ]
 
   env_vars = concat(
     [
-      { name = "REDIS_PASSWORD",           secret_name = "redis-password"   },
-      { name = "KAFKA_CLUSTER_API_KEY",    secret_name = "kafka-api-key"    },
+      { name = "REDIS_PASSWORD", secret_name = "redis-password" },
+      { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },
       { name = "KAFKA_CLUSTER_API_SECRET", secret_name = "kafka-api-secret" },
     ],
     local.common_env_vars
@@ -345,6 +353,7 @@ module "execution_service" {
 
 # MCP server for AI trading agents — stateless; forwards the caller's token to order and market data services.
 module "mcp_service" {
+  min_replicas   = local.scraped_min_replicas
   source         = "./modules/container-app"
   name           = "${local.prefix}-mcp-svc"
   container_name = "mcp-service"
@@ -356,17 +365,18 @@ module "mcp_service" {
     local.common_env_vars,
     [
       { name = "ORDER_SERVICE_URL",
-        value = "https://${local.prefix}-order-svc.${azurerm_container_app_environment.main.default_domain}" },
+      value = "https://${local.prefix}-order-svc.${azurerm_container_app_environment.main.default_domain}" },
       { name = "MARKETDATA_URL",
-        value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
+      value = "https://${local.prefix}-marketdata.${azurerm_container_app_environment.main.default_domain}" },
       { name = "MCP_PUBLIC_URL",
-        value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}" },
+      value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}" },
     ]
   )
 }
 
 # Trading advisor: chat UI + Claude agent loop; trades through the MCP service with the user's token.
 module "advisor_service" {
+  min_replicas   = local.scraped_min_replicas
   source         = "./modules/container-app"
   name           = "${local.prefix}-advisor-svc"
   container_name = "advisor-service"
@@ -378,12 +388,79 @@ module "advisor_service" {
     { name = "anthropic-api-key", value = var.anthropic_api_key },
   ] : []
 
+
   env_vars = concat(
     local.common_env_vars,
     [
       { name = "MCP_SERVER_URL",
-        value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}/mcp" },
+      value = "https://${local.prefix}-mcp-svc.${azurerm_container_app_environment.main.default_domain}/mcp" },
     ],
     var.anthropic_api_key != "" ? [{ name = "ANTHROPIC_API_KEY", secret_name = "anthropic-api-key" }] : []
   )
+}
+
+# ── Observability (Prometheus + Grafana) ─────────────────
+# Prometheus scrapes the services' /actuator/prometheus over HTTPS. Its config is rendered by Terraform
+# (service FQDNs are only known here) and mounted from a Container App secret.
+# The risk service is not scraped: its only ingress is gRPC, and its actuator port (8083) has no ingress.
+module "prometheus" {
+  count          = var.observability_enabled ? 1 : 0
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-prometheus"
+  container_name = "prometheus"
+  image          = "docker.io/prom/prometheus:v3.5.0"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  target_port    = 9090
+  max_replicas   = 1
+  min_replicas   = 1
+  cpu            = 0.5
+  memory         = "1Gi"
+
+  external_ingress   = false
+  secret_volume_path = "/etc/prometheus-config"
+  args = [
+    "--config.file=/etc/prometheus-config/prometheus-config", # file name = secret name
+    "--storage.tsdb.retention.time=7d",
+  ]
+
+  extra_secrets = [
+    {
+      name = "prometheus-config"
+      value = templatefile("${path.module}/../observability/prometheus/prometheus.azure.yml.tpl", {
+        prefix = local.prefix
+        domain = azurerm_container_app_environment.main.default_domain
+      })
+    },
+    {
+      name  = "prometheus-rules"
+      value = file("${path.module}/../observability/prometheus/rules/ordermanager.yml")
+    },
+  ]
+}
+
+# Image (config + dashboards baked in) is built and deployed by deploy.yml.
+module "grafana" {
+  count          = var.observability_enabled ? 1 : 0
+  source         = "./modules/container-app"
+  name           = "${local.prefix}-grafana"
+  container_name = "grafana"
+  environment_id = azurerm_container_app_environment.main.id
+  resource_group = azurerm_resource_group.main.name
+  target_port    = 3000
+  max_replicas   = 1
+  min_replicas   = 1
+  cpu            = 0.5
+  memory         = "1Gi"
+
+  extra_secrets = [
+    { name = "grafana-admin-password", value = var.grafana_admin_password },
+  ]
+
+  env_vars = [
+    { name = "GF_SECURITY_ADMIN_PASSWORD", secret_name = "grafana-admin-password" },
+    { name = "GF_AUTH_ANONYMOUS_ENABLED", value = "false" },
+    { name = "PROMETHEUS_URL",
+    value = "https://${local.prefix}-prometheus.internal.${azurerm_container_app_environment.main.default_domain}" },
+  ]
 }

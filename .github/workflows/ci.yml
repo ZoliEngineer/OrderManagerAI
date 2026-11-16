@@ -22,6 +22,7 @@ jobs:
       mcpservice: ${{ steps.filter.outputs.mcpservice }}
       advisorservice: ${{ steps.filter.outputs.advisorservice }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      prometheus: ${{ steps.filter.outputs.prometheus }}
       shared: ${{ steps.filter.outputs.shared }}
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +47,8 @@ jobs:
               - 'advisorservice/**'
             frontend:
               - 'frontend/**'
+            prometheus:
+              - 'observability/prometheus/**'
             shared:
               - 'pom.xml'
               - '.github/workflows/**'
@@ -212,3 +215,15 @@ jobs:
           cd frontend
           npm ci
           npm test
+
+  prometheus-rules:
+    needs: paths-filter
+    if: needs.paths-filter.outputs.prometheus == 'true' || needs.paths-filter.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check rule syntax and run rule unit tests
+        run: |
+          P="docker run --rm --entrypoint promtool -v $PWD/observability/prometheus:/p prom/prometheus:v3.5.0"
+          $P check rules /p/rules/ordermanager.yml
+          $P test rules /p/tests/ordermanager.test.yml

@@ -12,6 +12,8 @@ import com.juzo.ai.ordermanager.advisor.agent.PendingApproval.PendingCall;
 import com.juzo.ai.ordermanager.advisor.config.AdvisorProperties;
 import com.juzo.ai.ordermanager.advisor.mcp.McpToolGateway;
 import com.juzo.ai.ordermanager.advisor.mcp.ToolCallOutcome;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,14 +48,19 @@ public class AdvisorAgent {
     private final int maxIterations;
     private final Duration approvalTtl;
     private final Clock clock;
+    private final MeterRegistry meters;
+    private final String model;
 
     @Autowired
-    public AdvisorAgent(ClaudeGateway claude, McpToolGateway mcp, ToolCatalog catalog, AdvisorProperties props) {
-        this(claude, mcp, catalog, props.maxToolIterations(), props.approvalTtl(), Clock.systemUTC());
+    public AdvisorAgent(ClaudeGateway claude, McpToolGateway mcp, ToolCatalog catalog, AdvisorProperties props,
+                        MeterRegistry meters) {
+        this(claude, mcp, catalog, props.maxToolIterations(), props.approvalTtl(), Clock.systemUTC(), meters, props.model());
     }
 
     AdvisorAgent(ClaudeGateway claude, McpToolGateway mcp, ToolCatalog catalog, int maxIterations,
-                 Duration approvalTtl, Clock clock) {
+                 Duration approvalTtl, Clock clock, MeterRegistry meters, String model) {
+        this.meters = meters;
+        this.model = model;
         this.claude = claude;
         this.mcp = mcp;
         this.catalog = catalog;
@@ -137,12 +144,23 @@ public class AdvisorAgent {
         runLoop(conversation, bearerToken, sink);
     }
 
+    /** Claude API usage, so token spend per model is visible without reading any prompt text. */
+    private void recordTokens(String type, long tokens) {
+        DistributionSummary.builder("gen_ai.client.token.usage")
+                .description("Tokens used per Claude request, by direction")
+                .baseUnit("token")
+                .tag("gen_ai.request.model", model)
+                .tag("gen_ai.token.type", type)
+                .register(meters)
+                .record(tokens);
+    }
+
     private void runLoop(Conversation conversation, String bearerToken, AgentEventSink sink) {
         ToolCatalog.Snapshot tools;
         try {
             tools = catalog.build(mcp.listTools(bearerToken));
         } catch (RuntimeException e) {
-            log.warn("Could not list MCP tools: {}", e.toString());
+            log.warn("Could not list MCP tools", e);
             sink.emit(AgentEventSink.ERROR, Map.of("message", "The trading tools are unavailable right now (" + e.getMessage() + ")."));
             sink.emit(AgentEventSink.DONE, Map.of("awaitingApproval", false));
             return;
@@ -164,8 +182,10 @@ public class AdvisorAgent {
             Message response;
             try {
                 response = claude.send(conversation.history(), tools.tools(), listener);
+                recordTokens("input", response.usage().inputTokens());
+                recordTokens("output", response.usage().outputTokens());
             } catch (RuntimeException e) {
-                log.warn("Claude request failed: {}", e.toString());
+                log.warn("Claude request failed", e);
                 sink.emit(AgentEventSink.ERROR, Map.of("message", "The advisor could not be reached: " + e.getMessage()));
                 sink.emit(AgentEventSink.DONE, Map.of("awaitingApproval", false));
                 return;

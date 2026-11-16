@@ -17,7 +17,8 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health").permitAll()
+                        // Prometheus scrapers don't carry a JWT. See docs/observability.md: pull is a local-only learning setup.
+                        .requestMatchers("/actuator/health", "/actuator/prometheus").permitAll()
                         .requestMatchers("/api/internal/**").hasAuthority("SCOPE_internal.read")
                         .anyRequest().authenticated()
                 )

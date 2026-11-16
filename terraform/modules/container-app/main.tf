@@ -37,14 +37,31 @@ resource "azurerm_container_app" "this" {
   }
 
   template {
-    min_replicas = 0
+    dynamic "volume" {
+      for_each = var.secret_volume_path != null ? [1] : []
+      content {
+        name         = "secrets"
+        storage_type = "Secret"
+      }
+    }
+
+    min_replicas = var.min_replicas
     max_replicas = var.max_replicas
 
     container {
       name   = coalesce(var.container_name, var.name)
-      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-      cpu    = 0.25
-      memory = "0.5Gi"
+      image  = var.image
+      cpu    = var.cpu
+      memory = var.memory
+      args   = var.args
+
+      dynamic "volume_mounts" {
+        for_each = var.secret_volume_path != null ? [1] : []
+        content {
+          name = "secrets"
+          path = var.secret_volume_path
+        }
+      }
 
       dynamic "env" {
         for_each = var.env_vars
@@ -60,7 +77,7 @@ resource "azurerm_container_app" "this" {
   dynamic "ingress" {
     for_each = var.enable_ingress ? [1] : []
     content {
-      external_enabled = true
+      external_enabled = var.external_ingress
       target_port      = var.target_port
       transport        = var.transport
       traffic_weight {

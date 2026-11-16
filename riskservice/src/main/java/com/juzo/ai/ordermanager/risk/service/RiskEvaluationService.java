@@ -2,6 +2,9 @@ package com.juzo.ai.ordermanager.risk.service;
 
 import com.juzo.ai.ordermanager.risk.grpc.RiskCheckRequest;
 import com.juzo.ai.ordermanager.risk.grpc.RiskCheckResponse;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -13,13 +16,33 @@ public class RiskEvaluationService {
 
     private final BuyingPowerCache buyingPowerCache;
     private final PriceCache priceCache;
+    private final MeterRegistry meters;
+    private final Timer latency;
 
-    public RiskEvaluationService(BuyingPowerCache buyingPowerCache, PriceCache priceCache) {
+    public RiskEvaluationService(BuyingPowerCache buyingPowerCache, PriceCache priceCache, MeterRegistry meters) {
         this.buyingPowerCache = buyingPowerCache;
         this.priceCache = priceCache;
+        this.meters = meters;
+        this.latency = Timer.builder("risk.evaluate.latency")
+                .description("Time to evaluate one pre-trade risk check (cache lookups + arithmetic)")
+                .publishPercentileHistogram()
+                .serviceLevelObjectives(java.time.Duration.ofMillis(50))   // KPI: risk check < 50 ms
+                .register(meters);
     }
 
     public RiskCheckResponse evaluate(RiskCheckRequest request) {
+        RiskCheckResponse response = latency.record(() -> doEvaluate(request));
+        // decision and reason are enums => bounded tag values
+        Counter.builder("risk.checks")
+                .description("Risk decisions by outcome and reason code")
+                .tag("decision", response.getDecision().name().toLowerCase())
+                .tag("reason", response.getReason().name().toLowerCase())
+                .register(meters)
+                .increment();
+        return response;
+    }
+
+    private RiskCheckResponse doEvaluate(RiskCheckRequest request) {
         String decisionId = UUID.randomUUID().toString();
         try {
             if (request.getSide() == RiskCheckRequest.Side.BUY) {

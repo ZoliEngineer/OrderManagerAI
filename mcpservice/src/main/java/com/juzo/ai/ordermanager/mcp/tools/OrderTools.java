@@ -10,6 +10,8 @@ import com.juzo.ai.ordermanager.mcp.dto.OrderType;
 import com.juzo.ai.ordermanager.mcp.dto.PlaceOrderCommand;
 import com.juzo.ai.ordermanager.mcp.dto.PlaceOrderResult;
 import com.juzo.ai.ordermanager.mcp.dto.StockPrice;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.mcp.annotation.McpTool;
@@ -34,12 +36,23 @@ public class OrderTools {
     private final OrderServiceClient orderServiceClient;
     private final MarketDataClient marketDataClient;
     private final TradingGuardrails guardrails;
+    private final MeterRegistry meters;
 
     public OrderTools(OrderServiceClient orderServiceClient, MarketDataClient marketDataClient,
-                      TradingGuardrails guardrails) {
+                      TradingGuardrails guardrails, MeterRegistry meters) {
         this.orderServiceClient = orderServiceClient;
         this.marketDataClient = marketDataClient;
         this.guardrails = guardrails;
+        this.meters = meters;
+    }
+
+    // tool and outcome are literals from this class => bounded cardinality. Never tag with subject/clientId.
+    private void count(String tool, String outcome) {
+        Counter.builder("mcp.tool.calls")
+                .description("Agent-initiated order tool calls by tool and outcome")
+                .tag("tool", tool).tag("outcome", outcome)
+                .register(meters)
+                .increment();
     }
 
     @McpTool(name = "place_order",
@@ -71,6 +84,7 @@ public class OrderTools {
                 .or(() -> guardrails.checkNotional(quantity, unitPriceFor(command, caller)));
         if (guardrailRejection.isPresent()) {
             PlaceOrderResult result = PlaceOrderResult.rejected(guardrailRejection.get());
+            count("place_order", "guardrail_rejected");
             audit(caller, "place_order", command, result.status(), result.message());
             return result;
         }
@@ -79,9 +93,11 @@ public class OrderTools {
             OrderServiceResponse response = orderServiceClient.placeOrder(command, caller.bearerToken());
             boolean accepted = !"REJECTED".equals(response.status());
             PlaceOrderResult result = new PlaceOrderResult(accepted, response.orderId(), response.status(), response.message());
+            count("place_order", accepted ? "accepted" : "rejected");
             audit(caller, "place_order", command, result.status(), result.message());
             return result;
         } catch (DownstreamException e) {
+            count("place_order", "error");
             audit(caller, "place_order", command, "ERROR", e.getMessage());
             throw toToolError(e);
         }
@@ -105,6 +121,7 @@ public class OrderTools {
         try {
             orderServiceClient.cancelOrder(orderId, caller.bearerToken());
             CancelOrderResult result = new CancelOrderResult(orderId, true, "Order cancelled");
+            count("cancel_order", "cancelled");
             audit(caller, "cancel_order", orderId, "CANCELLED", result.message());
             return result;
         } catch (DownstreamException e) {
@@ -114,9 +131,11 @@ public class OrderTools {
                 default -> null;
             };
             if (result == null) {
+                count("cancel_order", "error");
                 audit(caller, "cancel_order", orderId, "ERROR", e.getMessage());
                 throw toToolError(e);
             }
+            count("cancel_order", "not_cancelled");
             audit(caller, "cancel_order", orderId, "NOT_CANCELLED", result.message());
             return result;
         }
@@ -159,7 +178,7 @@ public class OrderTools {
                     .findFirst()
                     .orElse(null);
         } catch (DownstreamException e) {
-            log.warn("Could not fetch market price for notional guardrail: {}", e.getMessage());
+            log.warn("Could not fetch market price for notional guardrail", e);
             return null;
         }
     }

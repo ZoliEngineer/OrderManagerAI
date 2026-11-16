@@ -27,6 +27,6 @@ public class FinnhubMarketStatusService {
             .uri("/stock/market-status?exchange=US")
             .retrieve()
             .bodyToMono(MarketStatus.class)
-            .doOnError(e -> log.error("Failed to fetch market status from Finnhub: {}", e));
+            .doOnError(e -> log.error("Failed to fetch market status from Finnhub", e));
     }
 }
