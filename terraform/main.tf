@@ -347,13 +347,14 @@ module "execution_service" {
   target_port      = 8086
   external_ingress = false
 
-  extra_secrets = [
+  extra_secrets = concat([
     { name = "redis-password", value = var.redis_password },
     { name = "kafka-api-key", value = var.kafka_cluster_api_key },
     { name = "kafka-api-secret", value = var.kafka_cluster_api_secret },
-  ]
+  ], local.otel_secrets)
 
   env_vars = concat(
+    local.otel_env_vars,
     [
       { name = "REDIS_PASSWORD", secret_name = "redis-password" },
       { name = "KAFKA_CLUSTER_API_KEY", secret_name = "kafka-api-key" },

@@ -235,11 +235,12 @@ Each step adds **one technology or concept**, ends in a verifiable state and is 
     - *Learn:* spans, `traceparent`, SDK vs API, OTLP, Collector pipelines, resource attributes.
     - *Build:* Collector + Tempo in compose; `spring-boot-starter-opentelemetry` added per service (no shared module); JDBC spans; actuator spans dropped.
     - *Verify:* an order trace with SQL child spans; TraceQL query.
-    - *Done (local only), partly verified:* Collector (:4318) → Tempo → Grafana data source; orderservice exports spans, actuator calls produce none. The Tempo data source is excluded from the Azure Grafana image. **Still to check:** an authenticated `POST /api/orders` with its SQL child spans (needs a real JWT; only a JDBC `connection` span was seen). Azure has no Collector/Tempo yet.
+    - *Done:* Collector (:4318) → Tempo → Grafana locally; in Azure orderservice exports directly to Grafana Cloud (steps 17-18 pulled forward). Actuator calls produce no spans. The Tempo data source is kept out of the Azure Grafana image via `.dockerignore`. Verified: order traces in Grafana Cloud.
+
 11. **Context propagation, one hop each.**
     - *Learn:* propagators, carriers, thread hand-offs, parent vs link.
-    - 11a gRPC Order → Risk.
-    - 11b Kafka Order → Execution (tick template not traced).
+    - 11a gRPC Order → Risk. *Done, verified in Azure:* Micrometer gRPC client/server observation interceptors (`GrpcObservationConfig` in order and risk); `GrpcTracePropagationTest` checks the parent/child link.
+    - 11b Kafka Order → Execution (tick template not traced). *Coded:* `spring.kafka.template.observation-enabled` in order, `spring.kafka.listener.observation-enabled` in execution. Only the order producer and execution listener are observed; marketdata and risk are unchanged.
     - 11c Disruptor manual hand-off + `TestObservationRegistry` test.
     - *Verify:* one trace from order → `execution.match`.
 12. **AI agent tracing (GenAI semconv).**
