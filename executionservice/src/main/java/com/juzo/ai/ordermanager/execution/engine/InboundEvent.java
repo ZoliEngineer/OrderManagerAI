@@ -1,5 +1,7 @@
 package com.juzo.ai.ordermanager.execution.engine;
 
+import io.micrometer.observation.Observation;
+
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -16,6 +18,8 @@ public final class InboundEvent {
     public BigDecimal limitPrice;
     public BigDecimal marketPrice;
     public long timestampNanos;
+    /** Trace hand-off: the Kafka listener's observation, used as parent of the matching span on the engine thread. */
+    public Observation parentObservation;
 
     public void clear() {
         type = null;
@@ -27,5 +31,6 @@ public final class InboundEvent {
         limitPrice = null;
         marketPrice = null;
         timestampNanos = 0L;
+        parentObservation = null;
     }
 }

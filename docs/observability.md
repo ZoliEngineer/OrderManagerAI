@@ -241,7 +241,7 @@ Each step adds **one technology or concept**, ends in a verifiable state and is 
     - *Learn:* propagators, carriers, thread hand-offs, parent vs link.
     - 11a gRPC Order → Risk. *Done, verified in Azure:* Micrometer gRPC client/server observation interceptors (`GrpcObservationConfig` in order and risk); `GrpcTracePropagationTest` checks the parent/child link.
     - 11b Kafka Order → Execution (tick template not traced). *Coded:* `spring.kafka.template.observation-enabled` in order, `spring.kafka.listener.observation-enabled` in execution. Only the order producer and execution listener are observed; marketdata and risk are unchanged.
-    - 11c Disruptor manual hand-off + `TestObservationRegistry` test.
+    - 11c Disruptor manual hand-off + `TestObservationRegistry` test. *Coded:* `OrderEventConsumer` stores the listener's `Observation` in `InboundEvent.parentObservation`; `MatchingEngineDispatcher` opens an `execution.match` observation (tags `ticker`, `event.type`) with it as parent on the engine thread, then clears the slot. Test: `MatchingTraceHandOffTest`. Cost: one observation object per event on the hot path.
     - *Verify:* one trace from order → `execution.match`.
 12. **AI agent tracing (GenAI semconv).**
     - *Learn:* `invoke_agent`/`chat`/`execute_tool`, `gen_ai.*` metrics, keeping prompts out.
