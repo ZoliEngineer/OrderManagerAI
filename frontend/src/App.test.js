@@ -1,28 +1,15 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
-jest.mock('@azure/msal-browser', () => ({
-  PublicClientApplication: jest.fn().mockImplementation(() => ({
-    initialize: jest.fn().mockResolvedValue(undefined),
-    handleRedirectPromise: jest.fn().mockResolvedValue(null),
-    addEventCallback: jest.fn().mockReturnValue('id'),
-    removeEventCallback: jest.fn(),
-    getActiveAccount: jest.fn().mockReturnValue(null),
-    getAllAccounts: jest.fn().mockReturnValue([]),
-    loginRedirect: jest.fn(),
-    logoutRedirect: jest.fn(),
-  })),
-  LogLevel: { Error: 0, Warning: 1, Info: 2, Verbose: 3 },
-  InteractionStatus: { None: 'none' },
+jest.mock('react-oidc-context', () => ({
+  AuthProvider: ({ children }) => children,
+  useAuth: () => ({ isLoading: false, isAuthenticated: true, signinRedirect: jest.fn() }),
 }));
 
-jest.mock('@azure/msal-react', () => ({
-  MsalProvider: ({ children }) => children,
-  useIsAuthenticated: () => true,
-  useMsal: () => ({
-    instance: { loginRedirect: jest.fn(), logoutRedirect: jest.fn() },
-    inProgress: 'none',
-  }),
+jest.mock('./auth/oidc', () => ({
+  getUserManager: jest.fn(),
+  signOut: jest.fn(),
+  onSigninCallback: jest.fn(),
 }));
 
 jest.mock('./hooks/useMarketData', () => () => ({ stocks: [], loading: false, error: null }));

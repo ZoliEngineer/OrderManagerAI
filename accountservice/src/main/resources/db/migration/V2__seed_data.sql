@@ -1,4 +1,4 @@
--- Replace ADVISOR_SUB_1 with the real Entra ID `sub` claim of your test advisor account.
+-- Replace ADVISOR_SUB_1 with the real OIDC `sub` (Cognito user UUID) claim of your test advisor account.
 -- To find it: log in, call GET /api/accounts (or decode your JWT at jwt.ms), copy the `sub` field.
 -- Store it in .env as ADVISOR_SUB_1=<value> and re-run this migration (or update the rows manually).
 

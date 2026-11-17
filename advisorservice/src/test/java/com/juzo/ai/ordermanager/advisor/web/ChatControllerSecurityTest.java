@@ -30,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({SecurityConfig.class, ChatControllerSecurityTest.StoreConfig.class})
 @EnableConfigurationProperties(AdvisorProperties.class)
 @TestPropertySource(properties = {
-        "AAD_TENANT_ID=tenant", "AAD_CLIENT_ID=client"})
+        "OIDC_ISSUER_URI=https://issuer.example.com", "OIDC_UI_CLIENT_ID=client"})
 class ChatControllerSecurityTest {
 
     static class StoreConfig {
@@ -68,7 +68,7 @@ class ChatControllerSecurityTest {
         mvc.perform(get("/config.json"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clientId").value("client"))
-                .andExpect(jsonPath("$.scope").value("api://client/mcp.trade"));
+                .andExpect(jsonPath("$.scope").value("openid mcp.trade"));
     }
 
     @Test

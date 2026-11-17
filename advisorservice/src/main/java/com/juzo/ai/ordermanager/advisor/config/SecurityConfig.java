@@ -8,7 +8,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
- * The static chat page and its config are public; the chat API requires an Entra ID token carrying the
+ * The static chat page and its config are public; the chat API requires an OIDC access token carrying the
  * {@code mcp.trade} scope, because that same token is forwarded to the MCP service to place orders.
  */
 @Configuration
