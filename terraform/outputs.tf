@@ -1,51 +1,73 @@
-output "marketdata_url" {
-  value = "https://${module.marketdata.fqdn}"
+output "name_servers" {
+  description = "Delegate the domain to these if it is not registered in Route 53."
+  value       = aws_route53_zone.main.name_servers
 }
 
 output "frontend_url" {
-  value = "https://${module.frontend.fqdn}"
+  value = local.app_origin
 }
 
-output "account_service_url" {
-  value = "https://${module.account_service.fqdn}"
-}
-
-output "order_service_url" {
-  value = "https://${module.order_service.fqdn}"
-}
-
-output "risk_service_url" {
-  value = "https://${module.risk_service.fqdn}"
+output "api_url" {
+  value = local.api_origin
 }
 
 output "mcp_server_url" {
-  value = "https://${module.mcp_service.fqdn}/mcp"
+  value = "${local.api_origin}/mcp"
 }
 
 output "advisor_url" {
-  value = "https://${module.advisor_service.fqdn}"
+  value = local.advisor_origin
+}
+
+output "oidc_issuer_uri" {
+  description = "Value for OIDC_ISSUER_URI / the properties files"
+  value       = local.oidc_issuer
+}
+
+output "cognito_client_ids" {
+  value = {
+    web     = aws_cognito_user_pool_client.web.id
+    advisor = aws_cognito_user_pool_client.advisor.id
+  }
 }
 
 output "mcp_scope" {
-  value = "api://${azuread_application.app.client_id}/mcp.trade"
+  value = local.mcp_scope
 }
 
-output "key_vault_uri" {
-  value = azurerm_key_vault.main.vault_uri
+output "advisor_user_subs" {
+  description = "Cognito `sub` per advisor — put these in the accounts seed (ADVISOR_SUB_1)."
+  value       = { for k, u in aws_cognito_user.advisor : k => u.sub }
 }
 
-output "aad_client_id" {
-  value = azuread_application.app.client_id
+output "ecr_repositories" {
+  value = { for k, r in aws_ecr_repository.svc : k => r.repository_url }
 }
 
-output "aad_tenant_id" {
-  value = data.azurerm_client_config.current.tenant_id
+output "ecs_cluster" {
+  value = aws_ecs_cluster.main.name
 }
 
-output "aad_scope" {
-  value = "api://${azuread_application.app.client_id}/market.read"
+output "ecs_services" {
+  value = {
+    marketdata = module.marketdata.service_name
+    account    = module.account.service_name
+    order      = module.order.service_name
+    risk       = module.risk.service_name
+    execution  = module.execution.service_name
+    mcp        = module.mcp.service_name
+    advisor    = module.advisor.service_name
+  }
 }
 
-output "grafana_url" {
-  value = var.observability_enabled ? "https://${module.grafana[0].fqdn}" : null
+output "frontend_bucket" {
+  value = aws_s3_bucket.frontend.id
+}
+
+output "cloudfront_distribution_id" {
+  value = aws_cloudfront_distribution.frontend.id
+}
+
+output "github_deploy_role_arn" {
+  value = aws_iam_role.github_deploy.arn
 }

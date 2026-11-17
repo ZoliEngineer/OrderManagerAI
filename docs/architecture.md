@@ -142,7 +142,7 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 | Contracts | Protobuf (`proto/`) | Single shared `.proto`; `protobuf-maven-plugin` generates client and server stubs. |
 | Messaging | Confluent Cloud Kafka (SASL_SSL) | `acks=all` + retries for orders; `acks=1` for prices (a lost tick is tolerable). Keys give per-ticker / per-order ordering. |
 | Cache / bus | Redis Cloud | Two roles: Pub/Sub broadcast for prices; key-value store for buying power. |
-| Databases | Managed PostgreSQL (Supabase / Neon) | Free-tier managed Postgres; Flyway schemas, enabled only via `FLYWAY_ENABLED=true`. |
+| Databases | Managed PostgreSQL (Supabase) | Free-tier managed Postgres; Flyway schemas, enabled only via `FLYWAY_ENABLED=true`. |
 | Testing | JUnit 5, Reactor `StepVerifier`, MockWebServer, gRPC testing, Testcontainers | |
 | Containers | Docker | Temurin 21 JRE Alpine per Java service; Node → nginx for the UI. |
 | Hosting | Azure Container Apps | Scale to zero (`min_replicas = 0`). Risk uses `transport = http2` for gRPC; Execution has no ingress. |

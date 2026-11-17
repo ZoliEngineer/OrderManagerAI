@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+domain_name  = "example.click"
+budget_email = "you@example.com"
+github_repo  = "ZoliEngineer/OrderManagerAI"
+
+# Cognito users to invite (email with a temporary password)
+advisor_emails = ["you@example.com"]
+
+# Secrets
+redis_password           = ""
+kafka_cluster_api_key    = ""
+kafka_cluster_api_secret = ""
+db_password              = ""
+anthropic_api_key        = ""
+finnhub_api_key          = ""
+
+# Cost levers
+# alb_enabled           = false   # tear the ALB down when idle
+# use_spot              = true
+# initial_desired_count = 0
