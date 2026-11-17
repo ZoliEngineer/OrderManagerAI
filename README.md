@@ -81,11 +81,11 @@ The app opens at `http://localhost:3000` and displays live market data fetched f
 
 ```bash
 cd mcpservice
-export $(cat ../.env | xargs)   # needs AAD_TENANT_ID, AAD_CLIENT_ID
+export $(cat ../.env | xargs)   # needs OIDC_ISSUER_URI, OIDC_CLIENT_IDS, MCP_SCOPE
 mvn spring-boot:run
 ```
 
-Agents call it with an Entra ID token issued on behalf of an advisor with the `api://<AAD_CLIENT_ID>/mcp.trade` scope (admin consent required). For example, with Claude Code:
+Agents call it with a Cognito access token issued on behalf of an advisor with the `ordermanager/mcp.trade` scope (set `MCP_SCOPE` accordingly). For example, with Claude Code:
 
 ```bash
 claude mcp add --transport http ordermanager http://localhost:8084/mcp \
@@ -101,6 +101,20 @@ cd marketdata
 mvn test
 ```
 
-## Azure deployment
+## AWS deployment
 
-Infrastructure is managed with Terraform in the `terraform/` directory. Secrets are configured as App Service Application Settings — see the Terraform variables for required values.
+Infrastructure is managed with Terraform in `terraform/` (ECS Fargate, ALB, CloudFront + S3, Cognito, ECR, Secrets Manager, Route 53 / ACM). See [docs/architecture.md](docs/architecture.md#aws-deployment) for the topology.
+
+```bash
+cd terraform
+./bootstrap.sh                                  # one-time: S3 state bucket + terraform init
+cp terraform.tfvars.example terraform.tfvars    # domain, budget email, secrets
+terraform apply -target=aws_route53_zone.main   # first time only: create the zone, delegate the domain
+terraform apply
+```
+
+Then set the repository variables `AWS_DEPLOY_ROLE_ARN`, `FRONTEND_BUCKET` and `CLOUDFRONT_DISTRIBUTION_ID` from `terraform output`, run the **Deploy to AWS** workflow to push the first images, and start everything with `scripts/env.sh up`.
+
+To save money when you are not working on it, run `scripts/env.sh down` (stops all tasks and removes the ALB). The **Environment — start / stop services** workflow starts and stops only the tasks.
+
+The previous Azure setup is preserved in the `azure-final` git tag.

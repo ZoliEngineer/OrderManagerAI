@@ -18,7 +18,7 @@ cd marketdata && mvn test -Dtest=MarketDataServiceTest
 # Full CI-style verification
 cd marketdata && mvn clean verify -B
 
-# Run locally (requires .env with REDIS_PASSWORD, KAFKA credentials)
+# Run locally (requires .env with REDIS_PASSWORD, KAFKA credentials, OIDC_ISSUER_URI, OIDC_CLIENT_IDS)
 cd marketdata && export $(cat ../.env | xargs) && mvn spring-boot:run
 
 # Trading advisor chat UI on http://localhost:8085 (requires ANTHROPIC_API_KEY in .env and mcpservice on :8084)

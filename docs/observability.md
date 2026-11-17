@@ -2,6 +2,8 @@
 
 Goal: see whether every service is **up**, **responding**, and, when it is not, **why**. Nothing more. It must be cheap to run and easy to maintain.
 
+> **Hosting note (2026-11):** the "Azure" parts below were written for Azure Container Apps. The application now runs on AWS ECS Fargate (see [architecture.md](architecture.md#aws-deployment)). The in-service instrumentation (Micrometer, `/actuator/prometheus`, business metrics, health, graceful shutdown) and the local Prometheus + Grafana stack are cloud-neutral and still apply. The cloud-hosted Prometheus/Grafana (Terraform `observability_enabled`) has **not** been ported to AWS yet, logs are in CloudWatch Logs (`aws logs tail /ecs/<service>`) instead of `az containerapp logs`, and ECS tasks do not scale to zero (desired count 1/0), so the cold-start notes do not apply.
+
 > **History.** A larger design (OpenTelemetry traces, Loki logs, Tempo, OTLP push, Grafana Cloud, SLO burn-rate alerts, Alertmanager) was built and then removed as too much for this project. It is preserved at git tag `observability-full` (the commit before the simplification) if you want to look at or revive any of it.
 
 ## Architecture
