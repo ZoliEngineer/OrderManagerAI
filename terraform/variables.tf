@@ -1,6 +1,7 @@
 variable "region" {
-  type    = string
-  default = "us-east-1"
+  description = "The account's assigned Region (AWS Settings → Project). New-style accounts can only create regional resources there."
+  type        = string
+  default     = "us-east-2"
 }
 
 variable "project_name" {
@@ -11,23 +12,6 @@ variable "project_name" {
 variable "environment" {
   type    = string
   default = "prod"
-}
-
-variable "domain_name" {
-  description = "Registered domain, e.g. ordermanager.click. The Route 53 zone is created here; app./api./advisor. subdomains are used."
-  type        = string
-}
-
-variable "github_repo" {
-  description = "GitHub repository allowed to deploy via OIDC, as owner/name."
-  type        = string
-  default     = "ZoliEngineer/OrderManagerAI"
-}
-
-variable "create_github_oidc_provider" {
-  description = "Set false if the account already has the token.actions.githubusercontent.com OIDC provider."
-  type        = bool
-  default     = true
 }
 
 variable "alb_enabled" {

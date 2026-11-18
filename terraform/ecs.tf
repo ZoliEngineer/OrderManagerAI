@@ -41,7 +41,7 @@ locals {
     use_spot               = var.use_spot
     desired_count          = var.initial_desired_count
     alb_enabled            = var.alb_enabled
-    listener_arn           = one(aws_lb_listener.https[*].arn)
+    listener_arn           = one(aws_lb_listener.http[*].arn)
   }
 }
 
@@ -73,9 +73,9 @@ module "marketdata" {
     local.kafka_secrets,
     var.finnhub_api_key != "" ? { FINNHUB_API_KEY = local.secret_ref["FINNHUB_API_KEY"] } : {}
   )
+  origin_verify = random_password.origin_verify.result
   alb_rules = [{
     priority = 10
-    hosts    = ["api.${var.domain_name}"]
     paths    = ["/api/marketdata*", "/api/market-status*", "/ws/*"]
   }]
 }
@@ -104,9 +104,9 @@ module "account" {
     SPRING_DATASOURCE_PASSWORD = local.secret_ref["DB_PASSWORD"]
     REDIS_PASSWORD             = local.secret_ref["REDIS_PASSWORD"]
   }
+  origin_verify = random_password.origin_verify.result
   alb_rules = [{
     priority = 20
-    hosts    = ["api.${var.domain_name}"]
     paths    = ["/api/accounts*"]
   }]
 }
@@ -143,9 +143,9 @@ module "order" {
     },
     local.kafka_secrets
   )
+  origin_verify = random_password.origin_verify.result
   alb_rules = [{
     priority = 30
-    hosts    = ["api.${var.domain_name}"]
     paths    = ["/api/orders*"]
   }]
 }
@@ -227,10 +227,13 @@ module "mcp" {
     MARKETDATA_URL    = "http://marketdata.${local.ns}:8080"
     MCP_PUBLIC_URL    = local.api_origin
     MCP_SCOPE         = local.mcp_scope
+    # The ALB talks plain HTTP to the tasks; CloudFront tells us the viewer's scheme (https) in this header.
+    SERVER_FORWARD_HEADERS_STRATEGY        = "native"
+    SERVER_TOMCAT_REMOTEIP_PROTOCOL_HEADER = "CloudFront-Forwarded-Proto"
   })
+  origin_verify = random_password.origin_verify.result
   alb_rules = [{
     priority = 40
-    hosts    = ["api.${var.domain_name}"]
     paths    = ["/mcp*", "/.well-known/*"]
   }]
 }
@@ -255,15 +258,18 @@ module "advisor" {
   listener_arn           = local.common.listener_arn
 
   container_port = 8085
+  health_path    = "/advisor/actuator/health" # the advisor runs under the /advisor context path
   environment = merge(local.http_env, {
-    MCP_SERVER_URL    = "http://mcp.${local.ns}:8084/mcp"
-    MCP_SCOPE         = local.mcp_scope
-    OIDC_UI_CLIENT_ID = aws_cognito_user_pool_client.advisor.id
-    OIDC_LOGOUT_URL   = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com/logout?client_id=${aws_cognito_user_pool_client.advisor.id}&logout_uri=${local.advisor_origin}/"
+    MCP_SERVER_URL                         = "http://mcp.${local.ns}:8084/mcp"
+    MCP_SCOPE                              = local.mcp_scope
+    SERVER_FORWARD_HEADERS_STRATEGY        = "native"
+    SERVER_TOMCAT_REMOTEIP_PROTOCOL_HEADER = "CloudFront-Forwarded-Proto"
+    OIDC_UI_CLIENT_ID                      = aws_cognito_user_pool_client.advisor.id
+    OIDC_LOGOUT_URL                        = "https://${aws_cognito_user_pool_domain.main.domain}.auth.${var.region}.amazoncognito.com/logout?client_id=${aws_cognito_user_pool_client.advisor.id}&logout_uri=${local.advisor_origin}/"
   })
-  secrets = { ANTHROPIC_API_KEY = local.secret_ref["ANTHROPIC_API_KEY"] }
+  secrets       = { ANTHROPIC_API_KEY = local.secret_ref["ANTHROPIC_API_KEY"] }
+  origin_verify = random_password.origin_verify.result
   alb_rules = [{
     priority = 50
-    hosts    = ["advisor.${var.domain_name}"]
   }]
 }

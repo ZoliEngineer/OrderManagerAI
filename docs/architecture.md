@@ -37,7 +37,7 @@ The target design (including services not yet built) is described in [requiremen
      Execution Service (no HTTP) ── Kafka consumer → LMAX Disruptor ring buffer
                                     → per-symbol matching engine (limit order book)
 
-  Advisor chat page ──REST + SSE, JWT (mcp.trade)──▶ Advisor Service :8085 ──Claude API (web_search, tool use)
+  Advisor chat page (/advisor/) ──REST + SSE, JWT (mcp.trade)──▶ Advisor Service :8085 ──Claude API (web_search, tool use)
                                                            │ user approves every order in the chat
                                                            ▼
   AI agent (MCP client) ──Streamable HTTP + JWT (mcp.trade)──▶ MCP Service :8084
@@ -132,7 +132,7 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 - **State:** plain hooks — `useMarketData` (REST snapshot, then WebSocket deltas), `useMarketStatus`, `useAccounts`, `useAccountDetails`, `useOrders`.
 - **UI:** `MarketDataTable` (price-flash animations), `AccountSelector`, `OrderTicketModal`, `OrdersPage`, `PortfolioPage`.
 - **Dev:** `src/setupProxy.js` routes `/api/accounts` → 8081, `/api/orders` → 8082, other `/api` and `/ws` → 8080.
-- **Prod:** the CRA build is uploaded to S3 and served by CloudFront (`app.<domain>`). The Dockerfile (Node 20 → nginx) remains for running the SPA in a container; it takes no build args.
+- **Prod:** the CRA build is uploaded to S3 and served by CloudFront (the distribution's `*.cloudfront.net` address). The Dockerfile (Node 20 → nginx) remains for running the SPA in a container; it takes no build args.
 
 ## Cross-cutting concerns
 
@@ -157,14 +157,14 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 ## AWS deployment
 
 ```
- Browser ── https://app.<domain> ──▶ CloudFront ─▶ S3 (SPA + config.json)
-    │
-    └─ https://api.<domain>, https://advisor.<domain> ──▶ ALB (TLS via ACM, idle timeout 900 s: WebSocket + SSE)
-          /api/marketdata*, /api/market-status*, /ws/*  ─▶ marketdata :8080
-          /api/accounts*                                 ─▶ account    :8081
-          /api/orders*                                   ─▶ order      :8082
-          /mcp*, /.well-known/*                          ─▶ mcp        :8084
-          advisor.<domain>                               ─▶ advisor    :8085
+ Browser ── https://<id>.cloudfront.net (one origin: no CORS, no custom domain) ──▶ CloudFront
+          /                                            ─▶ S3 (SPA + config.json)
+          /api/*, /ws/*, /mcp*, /.well-known/*, /advisor*  ─▶ ALB (HTTP, only reachable from CloudFront, idle timeout 900 s)
+              /api/marketdata*, /api/market-status*, /ws/*  ─▶ marketdata :8080
+              /api/accounts*                                 ─▶ account    :8081
+              /api/orders*                                   ─▶ order      :8082
+              /mcp*, /.well-known/*                          ─▶ mcp        :8084
+              /advisor*  (context path /advisor)             ─▶ advisor    :8085
 
  Inside the VPC (Cloud Map DNS, namespace ordermanagerai.local, plain HTTP / gRPC):
    order ─▶ risk.ordermanagerai.local:9090 (gRPC)     order ─▶ marketdata:8080
@@ -174,13 +174,15 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 - **Network:** one VPC with two public subnets and **no NAT gateway** (a NAT would cost about $33/month). Tasks get public IPs so they can reach Kafka, Redis, Postgres, the Claude API and Cognito; security groups allow inbound only from the ALB and from other tasks. Risk is no longer reachable from the internet.
 - **Compute:** one ECS service per backend, `deployment_minimum_healthy_percent = 0` so a deploy replaces the single task in place. Optional Fargate Spot (`use_spot`) and ARM (`cpu_architecture`).
 - **Secrets and config:** credentials live in one Secrets Manager secret; OIDC issuer, client ids, Cloud Map URLs and `SERVER_FORWARD_HEADERS_STRATEGY=framework` (so the apps see the ALB's HTTPS) are plain task environment variables.
-- **DNS / TLS:** a Route 53 zone with one wildcard ACM certificate; `api.` and `advisor.` records exist only while the ALB does.
-- **Cost control:** services start at desired count 0. With the ALB removed and tasks stopped, the floor is a few dollars a month (Route 53, Secrets Manager, ECR). `AWS Budgets` alerts at 80% actual / 100% forecast.
+- **Region:** us-east-2 (the account's assigned Region; regional services are blocked elsewhere). Supabase (us-east-1) is one cross-Region hop away.
+- **TLS / front door:** CloudFront's default `*.cloudfront.net` certificate terminates HTTPS; the ALB only speaks HTTP and accepts only CloudFront's address range plus a secret `X-Origin-Verify` header (anything else gets 403). A CloudFront Function does SPA routing for the S3 behaviour only, so API errors are not rewritten. CloudFront waits at most 60 s for origin bytes, so the advisor sends an SSE keep-alive comment every 15 s. The Tomcat services that build absolute URLs (MCP, advisor) read the scheme from `CloudFront-Forwarded-Proto`.
+- **ALB address changes:** the ALB gets a new DNS name each time `scripts/env.sh up` re-creates it, so CloudFront's origin is updated each time (a few minutes).
+- **Cost control:** services start at desired count 0. With the ALB removed and tasks stopped, the floor is a few dollars a month (Secrets Manager, ECR). `AWS Budgets` alerts at 80% actual / 100% forecast.
 - **Still outside AWS:** Redis Cloud and Confluent Cloud are third-party SaaS and keep their current hosts (their clusters are in Azure regions, so traffic to them crosses clouds); Supabase Postgres is on AWS us-east-1.
 
 ## CI/CD (`.github/workflows/`)
 - **ci.yml** — on every push/PR; uses a paths filter to run `mvn clean verify -B` only for changed services (marketdata, accountservice, orderservice, riskservice, mcpservice, advisorservice) and `npm ci && npm test` for the frontend; publishes test reports.
-- **deploy.yml** — runs after CI succeeds on `main` (or manually), authenticating to AWS with GitHub OIDC (no stored credentials). A matrix job builds each JAR and pushes `<sha>` + `latest` images to ECR; the frontend job builds the SPA, syncs it to S3 (never touching Terraform's `config.json`) and invalidates CloudFront; the deploy job forces a new ECS deployment of every service and checks running vs desired counts. Needs repository variables `AWS_DEPLOY_ROLE_ARN`, `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID` (from `terraform output`).
+- **deploy.yml** — runs after CI succeeds on `main` (or manually), authenticating to AWS with the access key of a dedicated IAM user stored as GitHub secrets (GitHub OIDC is blocked by this account's managed policy). A matrix job builds each JAR and pushes `<sha>` + `latest` images to ECR; the frontend job builds the SPA, syncs it to S3 (never touching Terraform's `config.json`) and invalidates CloudFront; the deploy job forces a new ECS deployment of every service and checks running vs desired counts. Needs repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` and variables `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID` (from `terraform output`).
 - **env-scale.yml** — manual start/stop of all ECS services (desired count 1/0). `scripts/env.sh up|down` additionally creates/removes the ALB with Terraform (needs admin credentials).
 - **ai-code-review.yml** — Claude API reviews PR diffs, posts a comment, and auto-merges if approved.
 - **ai-issue-handler.yml** — Claude API turns issues labelled `bug` or `enhancement` into a feature branch + PR, validated by tests.

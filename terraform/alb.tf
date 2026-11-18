@@ -1,4 +1,10 @@
-# Single public ALB. Idle timeout 900 s so the advisor SSE turns (up to 10 min) and WebSockets are not cut.
+# Internal-facing ALB behind CloudFront. Idle timeout 900 s; CloudFront itself caps origin silence at 60 s, so
+# the advisor sends SSE keep-alive comments every 15 s.
+resource "random_password" "origin_verify" {
+  length  = 32
+  special = false
+}
+
 resource "aws_lb" "main" {
   count              = var.alb_enabled ? 1 : 0
   name               = local.prefix
@@ -8,24 +14,8 @@ resource "aws_lb" "main" {
   idle_timeout       = 900
 }
 
-resource "aws_lb_listener" "https" {
-  count             = var.alb_enabled ? 1 : 0
-  load_balancer_arn = aws_lb.main[0].arn
-  port              = 443
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = aws_acm_certificate_validation.main.certificate_arn
-
-  default_action {
-    type = "fixed-response"
-    fixed_response {
-      content_type = "text/plain"
-      message_body = "Not found"
-      status_code  = "404"
-    }
-  }
-}
-
+# Plain HTTP: CloudFront terminates TLS. Requests without the secret header (anything not coming through
+# CloudFront) get the default 403.
 resource "aws_lb_listener" "http" {
   count             = var.alb_enabled ? 1 : 0
   load_balancer_arn = aws_lb.main[0].arn
@@ -33,11 +23,11 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
     }
   }
 }

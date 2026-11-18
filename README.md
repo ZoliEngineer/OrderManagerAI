@@ -103,17 +103,28 @@ mvn test
 
 ## AWS deployment
 
-Infrastructure is managed with Terraform in `terraform/` (ECS Fargate, ALB, CloudFront + S3, Cognito, ECR, Secrets Manager, Route 53 / ACM). See [docs/architecture.md](docs/architecture.md#aws-deployment) for the topology.
+Infrastructure is managed with Terraform in `terraform/` (ECS Fargate, ALB, CloudFront + S3, Cognito, ECR, Secrets Manager). There is no custom domain: everything is served from one `https://<id>.cloudfront.net` address, with the advisor chat under `/advisor/`. See [docs/architecture.md](docs/architecture.md#aws-deployment) for the topology.
 
 ```bash
 cd terraform
 ./bootstrap.sh                                  # one-time: S3 state bucket + terraform init
-cp terraform.tfvars.example terraform.tfvars    # domain, budget email, secrets
-terraform apply -target=aws_route53_zone.main   # first time only: create the zone, delegate the domain
+cp terraform.tfvars.example terraform.tfvars    # budget email, advisor emails
 terraform apply
 ```
 
-Then set the repository variables `AWS_DEPLOY_ROLE_ARN`, `FRONTEND_BUCKET` and `CLOUDFRONT_DISTRIBUTION_ID` from `terraform output`, run the **Deploy to AWS** workflow to push the first images, and start everything with `scripts/env.sh up`.
+The app URL is printed by `terraform output frontend_url`; the advisor chat is at `<that URL>/advisor/` (locally: http://localhost:8085/advisor/).
+
+Then create an access key for the deploy user and store it, with the other values, in GitHub (the account's managed policy blocks GitHub OIDC):
+
+```bash
+aws iam create-access-key --user-name "$(terraform output -raw github_deploy_user)"   # shown once
+gh secret set AWS_ACCESS_KEY_ID
+gh secret set AWS_SECRET_ACCESS_KEY
+gh variable set FRONTEND_BUCKET --body "$(terraform output -raw frontend_bucket)"
+gh variable set CLOUDFRONT_DISTRIBUTION_ID --body "$(terraform output -raw cloudfront_distribution_id)"
+```
+
+Run the **Deploy to AWS** workflow to push the first images, and start everything with `scripts/env.sh up`. The account's assigned Region is us-east-2 (new-style AWS accounts can only create regional resources in their own Region).
 
 To save money when you are not working on it, run `scripts/env.sh down` (stops all tasks and removes the ALB). The **Environment — start / stop services** workflow starts and stops only the tasks.
 

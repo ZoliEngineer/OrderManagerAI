@@ -1,9 +1,9 @@
 # Cognito replaces Entra ID. Access tokens carry `client_id` (no `aud`) and scopes like `ordermanager/mcp.trade`;
 # the services accept them via JwtSecurityConfig (OIDC_CLIENT_IDS, scope prefix stripped).
 locals {
-  app_origin     = "https://app.${var.domain_name}"
-  api_origin     = "https://api.${var.domain_name}"
-  advisor_origin = "https://advisor.${var.domain_name}"
+  app_origin     = "https://${aws_cloudfront_distribution.main.domain_name}"
+  api_origin     = local.app_origin # same CloudFront origin
+  advisor_origin = "${local.app_origin}/advisor"
 
   cognito_domain = "${local.prefix}-${data.aws_caller_identity.current.account_id}"
   oidc_issuer    = "https://cognito-idp.${var.region}.amazonaws.com/${aws_cognito_user_pool.main.id}"
@@ -88,8 +88,8 @@ resource "aws_cognito_user_pool_client" "advisor" {
   allowed_oauth_flows                  = ["code"]
   allowed_oauth_scopes                 = ["openid", "email", "${aws_cognito_resource_server.api.identifier}/mcp.trade"]
   supported_identity_providers         = ["COGNITO"]
-  callback_urls                        = ["http://localhost:8085/", "${local.advisor_origin}/"]
-  logout_urls                          = ["http://localhost:8085/", "${local.advisor_origin}/"]
+  callback_urls                        = ["http://localhost:8085/advisor/", "${local.advisor_origin}/"]
+  logout_urls                          = ["http://localhost:8085/advisor/", "${local.advisor_origin}/"]
   explicit_auth_flows                  = ["ALLOW_REFRESH_TOKEN_AUTH"]
   prevent_user_existence_errors        = "ENABLED"
 

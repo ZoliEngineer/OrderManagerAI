@@ -1,8 +1,3 @@
-output "name_servers" {
-  description = "Delegate the domain to these if it is not registered in Route 53."
-  value       = aws_route53_zone.main.name_servers
-}
-
 output "frontend_url" {
   value = local.app_origin
 }
@@ -16,7 +11,7 @@ output "mcp_server_url" {
 }
 
 output "advisor_url" {
-  value = local.advisor_origin
+  value = "${local.advisor_origin}/"
 }
 
 output "oidc_issuer_uri" {
@@ -65,9 +60,10 @@ output "frontend_bucket" {
 }
 
 output "cloudfront_distribution_id" {
-  value = aws_cloudfront_distribution.frontend.id
+  value = aws_cloudfront_distribution.main.id
 }
 
-output "github_deploy_role_arn" {
-  value = aws_iam_role.github_deploy.arn
+output "github_deploy_user" {
+  description = "Create an access key for this user and store it as the GitHub secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY."
+  value       = aws_iam_user.github_deploy.name
 }

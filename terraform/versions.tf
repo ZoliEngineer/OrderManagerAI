@@ -6,13 +6,17 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 
   # The bucket is created by bootstrap.sh and passed at init time:
   #   terraform init -backend-config="bucket=<bucket>"
   backend "s3" {
     key          = "terraform.tfstate"
-    region       = "us-east-1"
+    region       = "us-east-2"
     encrypt      = true
     use_lockfile = true
   }

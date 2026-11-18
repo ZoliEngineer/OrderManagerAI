@@ -3,12 +3,12 @@ name: Deploy to AWS
 # Builds every service, pushes images to ECR, uploads the frontend to S3/CloudFront and rolls the ECS services.
 # Infrastructure (terraform/) is applied manually, not from this workflow.
 #
-# Required repository variables (Settings → Secrets and variables → Actions → Variables); values come from
-# `terraform output`:
-#   AWS_DEPLOY_ROLE_ARN          github_deploy_role_arn
+# Required repository secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (access key of the IAM user in
+# `terraform output github_deploy_user`; GitHub OIDC is blocked in this account).
+# Required repository variables (values from `terraform output`):
 #   FRONTEND_BUCKET              frontend_bucket
 #   CLOUDFRONT_DISTRIBUTION_ID   cloudfront_distribution_id
-# Optional: AWS_REGION (default us-east-1), ECS_CLUSTER (default ordermanagerai-prod).
+# Optional: AWS_REGION (default us-east-2), ECS_CLUSTER (default ordermanagerai-prod).
 
 on:
   workflow_run:
@@ -18,11 +18,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write # GitHub OIDC → AWS, no stored credentials
   contents: read
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
   ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'ordermanagerai-prod' }}
   PREFIX: ordermanagerai
 
@@ -55,7 +54,8 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - id: ecr
@@ -89,7 +89,8 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Upload to S3
@@ -113,7 +114,8 @@ jobs:
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       # Task definitions point at :latest, so a forced deployment pulls the image pushed above.

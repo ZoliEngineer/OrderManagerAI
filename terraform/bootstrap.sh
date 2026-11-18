@@ -3,13 +3,14 @@
 # Needs AWS credentials for the target account (aws configure / SSO). Safe to re-run.
 set -euo pipefail
 
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-us-east-2}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="ordermanagerai-tfstate-${ACCOUNT_ID}"
 
 if ! aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
   echo "Creating state bucket $BUCKET"
-  aws s3api create-bucket --bucket "$BUCKET" --region "$REGION"
+  aws s3api create-bucket --bucket "$BUCKET" --region "$REGION" \
+    --create-bucket-configuration "LocationConstraint=$REGION"
 fi
 aws s3api put-bucket-versioning --bucket "$BUCKET" --versioning-configuration Status=Enabled
 aws s3api put-public-access-block --bucket "$BUCKET" \

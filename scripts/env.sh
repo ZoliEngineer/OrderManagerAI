@@ -6,7 +6,7 @@
 set -euo pipefail
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform" && pwd)"
-REGION="${AWS_REGION:-us-east-1}"
+REGION="${AWS_REGION:-us-east-2}"
 CLUSTER="$(terraform -chdir="$TF_DIR" output -raw ecs_cluster)"
 
 scale() {

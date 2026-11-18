@@ -115,3 +115,16 @@ variable "alb_rules" {
   }))
   default = []
 }
+
+variable "health_path" {
+  description = "Path of the Spring Boot health endpoint (includes the context path, if any)."
+  type        = string
+  default     = "/actuator/health"
+}
+
+variable "origin_verify" {
+  description = "Secret value of the X-Origin-Verify header that CloudFront adds; listener rules only match requests carrying it."
+  type        = string
+  default     = null
+  sensitive   = true
+}

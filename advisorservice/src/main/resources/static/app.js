@@ -95,9 +95,12 @@ el.authButton.addEventListener('click', async () => {
 });
 
 // ---------- API ----------
+// The page lives under a context path (/advisor/), so API calls are resolved against the page's directory.
+const BASE = window.location.pathname.replace(/[^/]*$/, '');
+
 async function api(path, body) {
   const token = await getToken();
-  return fetch(path, {
+  return fetch(BASE + path.replace(/^\//, ''), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

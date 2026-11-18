@@ -37,7 +37,7 @@ resource "aws_ecs_task_definition" "this" {
 
       # busybox wget ships with the alpine JRE image; Spring Boot's JVM needs a long start period on 0.25 vCPU.
       healthCheck = local.health_port > 0 ? {
-        command     = ["CMD-SHELL", "wget -qO- http://localhost:${local.health_port}/actuator/health || exit 1"]
+        command     = ["CMD-SHELL", "wget -qO- http://localhost:${local.health_port}${var.health_path} || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
@@ -85,7 +85,7 @@ resource "aws_lb_target_group" "this" {
   deregistration_delay = 15
 
   health_check {
-    path                = "/actuator/health"
+    path                = var.health_path
     matcher             = "200"
     interval            = 30
     healthy_threshold   = 2
@@ -101,6 +101,16 @@ resource "aws_lb_listener_rule" "this" {
   action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.this[0].arn
+  }
+
+  dynamic "condition" {
+    for_each = var.origin_verify != null ? [1] : []
+    content {
+      http_header {
+        http_header_name = "X-Origin-Verify"
+        values           = [var.origin_verify]
+      }
+    }
   }
 
   dynamic "condition" {
