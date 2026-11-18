@@ -125,14 +125,16 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 - **Auth:** the browser's Cognito access token (scope `ordermanager/mcp.trade`) is validated here and forwarded to the MCP Service, so `sub`, ownership checks and Postgres RLS apply unchanged. The Claude API key stays on the server (`ANTHROPIC_API_KEY`).
 - **State:** conversations are held in memory per user (`sub`) and evicted after 2h idle. A restart loses them.
 
-### Frontend (`frontend/`) — React 18 + OIDC
-- **Auth:** `src/auth/oidc.js` builds an `oidc-client-ts` `UserManager` (authorization code + PKCE, session-storage cache) wrapped by `react-oidc-context`; it works with Cognito or any OIDC provider. `src/api/client.js` gets the access token (silent refresh) and injects `Authorization: Bearer` on `fetch` calls.
-- **Runtime config:** `src/config.js` fetches `/config.json` at startup (API URLs, WebSocket base, OIDC authority / client id / scope). Terraform writes that file next to the SPA, so one build serves every environment; `REACT_APP_*` variables are only the dev/test fallback.
-- **API modules:** `marketDataApi.js`, `marketDataWebSocket.js` (sends the auth frame on open), `accountApi.js`, `ordersApi.js`.
-- **State:** plain hooks — `useMarketData` (REST snapshot, then WebSocket deltas), `useMarketStatus`, `useAccounts`, `useAccountDetails`, `useOrders`.
-- **UI:** `MarketDataTable` (price-flash animations), `AccountSelector`, `OrderTicketModal`, `OrdersPage`, `PortfolioPage`.
-- **Dev:** `src/setupProxy.js` routes `/api/accounts` → 8081, `/api/orders` → 8082, other `/api` and `/ws` → 8080.
-- **Prod:** the CRA build is uploaded to S3 and served by CloudFront (the distribution's `*.cloudfront.net` address). The Dockerfile (Node 20 → nginx) remains for running the SPA in a container; it takes no build args.
+### Frontend (`frontend/`) — React 18 + TypeScript + OIDC
+- **Toolchain:** Vite (dev server, build to `dist/`), TypeScript in `strict` mode plus `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, type-aware `typescript-eslint`, Vitest + Testing Library. `npm run build` runs `tsc -b` first, because Vite only strips types.
+- **Types:** `src/types/` mirrors the Java DTOs (`Stock`, `MarketStatus`, `AccountSummary`/`AccountDetails`, `Order`, `OrderResponse`). Ids are branded (`AccountId`, `OrderId`), enums are `as const` arrays with derived unions, and `PlaceOrderRequest` is a discriminated union on `type` (only `LIMIT` carries `limitPrice`). Server JSON is cast, not validated, in exactly one place: `request<T>()` in `src/api/client.ts` (and the WebSocket `onmessage`).
+- **Auth:** `src/auth/oidc.ts` builds an `oidc-client-ts` `UserManager` (authorization code + PKCE, session-storage cache) wrapped by `react-oidc-context`; it works with Cognito or any OIDC provider. `getAccessToken()` returns the cached token or refreshes silently; `src/api/client.ts` injects `Authorization: Bearer` on `fetch` calls and throws a typed `HttpError`.
+- **Runtime config:** `src/config.ts` fetches `/config.json` at startup (API URLs, WebSocket base, OIDC authority / client id / scope) and merges it over the defaults. Terraform writes that file next to the SPA, so one build serves every environment; `VITE_*` variables (typed in `src/vite-env.d.ts`) are only the dev/test fallback.
+- **API modules:** `marketDataApi.ts`, `marketDataWebSocket.ts` (sends the auth frame on open), `accountApi.ts`, `ordersApi.ts`.
+- **State:** hooks return an `AsyncState<T>` discriminated union (`idle | loading | success | error`). `useAsync` loads data for `useAccounts`, `useAccountDetails` and `useOrders`; `useMarketData` merges the REST snapshot with WebSocket deltas; `useMarketStatus` polls.
+- **UI:** `MarketDataTable` (price-flash animations), `AccountSelector`, `OrderTicketModal` (generic `ToggleGroup<T>`), `OrdersPage` (sorting in `utils/orderSort.ts`), `PortfolioPage`.
+- **Dev:** the `server.proxy` block in `vite.config.ts` routes `/api/accounts` → 8081, `/api/orders` → 8082, other `/api` and `/ws` → 8080.
+- **Prod:** the Vite build (`dist/`) is uploaded to S3 and served by CloudFront (the distribution's `*.cloudfront.net` address). The Dockerfile (Node 22 → nginx) remains for running the SPA in a container; it takes no build args.
 
 ## Cross-cutting concerns
 
@@ -184,7 +186,7 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 - **Still outside AWS:** Redis Cloud and Confluent Cloud are third-party SaaS and keep their current hosts (their clusters are in Azure regions, so traffic to them crosses clouds); Supabase Postgres is on AWS us-east-1.
 
 ## CI/CD (`.github/workflows/`)
-- **ci.yml** — on every push/PR; uses a paths filter to run `mvn clean verify -B` only for changed services (marketdata, accountservice, orderservice, riskservice, mcpservice, advisorservice) and `npm ci && npm test` for the frontend; publishes test reports.
+- **ci.yml** — on every push/PR; uses a paths filter to run `mvn clean verify -B` only for changed services (marketdata, accountservice, orderservice, riskservice, mcpservice, advisorservice) and `npm ci`, `typecheck`, `lint` and `test` for the frontend; publishes test reports.
 - **deploy.yml** — runs after CI succeeds on `main` (or manually), authenticating to AWS with the access key of a dedicated IAM user stored as GitHub secrets (GitHub OIDC is blocked by this account's managed policy). A matrix job builds each JAR (and the Prometheus and Grafana images) and pushes `<sha>` + `latest` images to ECR; the frontend job builds the SPA, syncs it to S3 (never touching Terraform's `config.json`) and invalidates CloudFront; the deploy job forces a new ECS deployment of every service that exists (Prometheus and Grafana only if observability is enabled) and checks running vs desired counts. Needs repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` and variables `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID` (from `terraform output`).
 - **env-scale.yml** — manual start/stop of all ECS services (desired count 1/0). `scripts/env.sh up|down` additionally creates/removes the ALB with Terraform (needs admin credentials).
 - **ai-code-review.yml** — Claude API reviews PR diffs, posts a comment, and auto-merges if approved.
