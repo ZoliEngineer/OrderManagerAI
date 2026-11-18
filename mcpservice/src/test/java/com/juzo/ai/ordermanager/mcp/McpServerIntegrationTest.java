@@ -32,8 +32,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "AAD_TENANT_ID=test-tenant",
-        "AAD_CLIENT_ID=test-client",
+        "OIDC_ISSUER_URI=https://issuer.example.com/test-pool",
+        "MCP_SCOPE=ordermanager/mcp.trade",
         "mcp.trading.max-notional-per-order=",
         "mcp.trading.max-quantity-per-order=",
         "server.shutdown=immediate"
@@ -179,8 +179,19 @@ class McpServerIntegrationTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(response.body()).contains("authorization_servers", "login.microsoftonline.com/test-tenant",
-                "api://test-client/mcp.trade");
+        assertThat(response.body()).contains("authorization_servers", "issuer.example.com/test-pool",
+                "ordermanager/mcp.trade");
+    }
+
+    /** ECS container health checks call these without a token; a 401 here would restart every task. */
+    @Test
+    void healthGroups_arePublic() throws Exception {
+        for (String path : new String[] {"/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness"}) {
+            HttpResponse<String> response = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).as(path).isEqualTo(200);
+        }
     }
 
     private HttpResponse<String> post(String token) throws Exception {

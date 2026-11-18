@@ -15,9 +15,9 @@ const el = {
 };
 
 const state = {
-  msal: null,
-  scope: null,
-  account: null,
+  userManager: null,
+  logoutUrl: null,
+  user: null,
   conversationId: null,
   busy: false,
 };
@@ -30,58 +30,77 @@ function saveAccountId(value) {
   try { localStorage.setItem(ACCOUNT_KEY, value); } catch { /* storage unavailable */ }
 }
 
-// ---------- auth ----------
+// ---------- auth (generic OIDC: Cognito, Entra ID, ...) ----------
 async function initAuth() {
   const config = await (await fetch('config.json')).json();
-  state.scope = config.scope;
-  state.msal = new msal.PublicClientApplication({
-    auth: {
-      clientId: config.clientId,
-      authority: `https://login.microsoftonline.com/${config.tenantId}`,
-      redirectUri: window.location.origin + window.location.pathname,
-    },
-    cache: { cacheLocation: 'sessionStorage' },
+  state.logoutUrl = config.logoutUrl || null;
+  state.userManager = new oidc.UserManager({
+    authority: config.authority,
+    client_id: config.clientId,
+    redirect_uri: window.location.origin + window.location.pathname,
+    response_type: 'code',
+    scope: config.scope,
+    userStore: new oidc.WebStorageStateStore({ store: window.sessionStorage }),
+    automaticSilentRenew: false,
   });
-  await state.msal.initialize();
-  const redirect = await state.msal.handleRedirectPromise();
-  state.account = redirect?.account ?? state.msal.getActiveAccount() ?? state.msal.getAllAccounts()[0] ?? null;
-  if (state.account) state.msal.setActiveAccount(state.account);
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('code') && params.has('state')) {
+    try {
+      state.user = await state.userManager.signinRedirectCallback();
+    } catch (e) {
+      console.error('Sign-in failed', e);
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else {
+    state.user = await state.userManager.getUser();
+  }
   renderAuth();
 }
 
 function renderAuth() {
-  const signedIn = !!state.account;
+  const signedIn = !!state.user && !state.user.expired;
   el.authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
-  el.authButton.title = signedIn ? state.account.username : '';
+  el.authButton.title = signedIn ? (state.user.profile.email || state.user.profile['cognito:username'] || state.user.profile.sub) : '';
   el.input.disabled = !signedIn;
   el.input.placeholder = signedIn ? 'Ask your advisor…  (Enter to send, Shift+Enter for a new line)' : 'Sign in to chat with your advisor';
   updateSendState();
 }
 
 async function getToken() {
-  const request = { scopes: [state.scope], account: state.account };
-  try {
-    return (await state.msal.acquireTokenSilent(request)).accessToken;
-  } catch (e) {
-    if (e instanceof msal.InteractionRequiredAuthError) {
-      await state.msal.acquireTokenRedirect(request);
+  let user = await state.userManager.getUser();
+  if (!user || user.expired) {
+    try {
+      user = await state.userManager.signinSilent();
+    } catch (e) {
+      await state.userManager.signinRedirect();
+      throw e;
     }
-    throw e;
   }
+  state.user = user;
+  return user.access_token;
 }
 
-el.authButton.addEventListener('click', () => {
-  if (state.account) {
-    state.msal.logoutRedirect({ account: state.account });
+el.authButton.addEventListener('click', async () => {
+  if (state.user) {
+    await state.userManager.removeUser();
+    state.user = null;
+    if (state.logoutUrl) {
+      window.location.assign(state.logoutUrl);
+    } else {
+      renderAuth();
+    }
   } else {
-    state.msal.loginRedirect({ scopes: [state.scope] });
+    state.userManager.signinRedirect();
   }
 });
 
 // ---------- API ----------
+// The page lives under a context path (/advisor/), so API calls are resolved against the page's directory.
+const BASE = window.location.pathname.replace(/[^/]*$/, '');
+
 async function api(path, body) {
   const token = await getToken();
-  return fetch(path, {
+  return fetch(BASE + path.replace(/^\//, ''), {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,

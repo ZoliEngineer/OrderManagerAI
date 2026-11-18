@@ -1,10 +1,9 @@
 import { getToken } from './client';
-
-const ORDERS_BASE_URL = process.env.REACT_APP_ORDERS_API_URL ?? '';
+import { config } from '../config';
 
 async function ordersRequest(path, options = {}) {
   const token = await getToken();
-  const response = await fetch(`${ORDERS_BASE_URL}${path}`, {
+  const response = await fetch(`${config.ordersApiUrl}${path}`, {
     ...options,
     headers: {
       ...options.headers,

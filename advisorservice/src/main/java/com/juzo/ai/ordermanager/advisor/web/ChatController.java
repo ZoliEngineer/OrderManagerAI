@@ -26,6 +26,9 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
@@ -43,6 +46,8 @@ public class ChatController {
     private final ConversationStore store;
     private final AdvisorAgent agent;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    // CloudFront closes a response that is silent for 60 s; a web search or long thinking step can be quieter.
+    private final ScheduledExecutorService heartbeats = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().daemon().name("sse-heartbeat").factory());
 
     public ChatController(ConversationStore store, AdvisorAgent agent) {
         this.store = store;
@@ -82,6 +87,7 @@ public class ChatController {
     private SseEmitter stream(Conversation conversation, Consumer<AgentEventSink> turn) {
         SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MS);
         SseSink sink = new SseSink(emitter);
+        ScheduledFuture<?> heartbeat = heartbeats.scheduleAtFixedRate(sink::heartbeat, 15, 15, TimeUnit.SECONDS);
         try {
             executor.submit(() -> {
                 try {
@@ -91,11 +97,13 @@ public class ChatController {
                     sink.emit(AgentEventSink.ERROR, Map.of("message", "Unexpected error: " + e.getMessage()));
                     sink.emit(AgentEventSink.DONE, Map.of("awaitingApproval", false));
                 } finally {
+                    heartbeat.cancel(false);
                     conversation.release();
                     emitter.complete();
                 }
             });
         } catch (RuntimeException e) {
+            heartbeat.cancel(false);
             conversation.release();
             throw e;
         }
@@ -105,6 +113,7 @@ public class ChatController {
     @PreDestroy
     void shutdown() {
         executor.shutdownNow();
+        heartbeats.shutdownNow();
     }
 
     /**
@@ -117,6 +126,16 @@ public class ChatController {
 
         SseSink(SseEmitter emitter) {
             this.emitter = emitter;
+        }
+
+        /** SSE comment line: keeps proxies and the CDN from timing out an idle stream; ignored by the browser. */
+        synchronized void heartbeat() {
+            if (!open) return;
+            try {
+                emitter.send(SseEmitter.event().comment("keepalive"));
+            } catch (IOException | IllegalStateException e) {
+                open = false;
+            }
         }
 
         @Override

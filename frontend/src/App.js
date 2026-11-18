@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { useIsAuthenticated, useMsal } from '@azure/msal-react';
-import { InteractionStatus } from '@azure/msal-browser';
+import { useAuth } from 'react-oidc-context';
 import MarketDataTable from './components/MarketDataTable';
 import AccountSelector from './components/AccountSelector';
 import PortfolioPage from './components/PortfolioPage';
 import OrdersPage from './components/OrdersPage';
 import useMarketStatus from './hooks/useMarketStatus';
-import { loginRequest } from './auth/msalConfig';
+import { signOut } from './auth/oidc';
 import './styles/layout.css';
 import './styles/global.css';
 
@@ -32,24 +31,23 @@ function MarketStatusLabel() {
 }
 
 function App() {
-  const isAuthenticated = useIsAuthenticated();
-  const { instance, inProgress } = useMsal();
+  const auth = useAuth();
   const [activePage, setActivePage] = useState('market-data');
   const [selectedAccountId, setSelectedAccountId] = useState('');
 
-  if (inProgress !== InteractionStatus.None) {
+  if (auth.isLoading) {
     return null;
   }
 
-  if (!isAuthenticated) {
+  if (!auth.isAuthenticated) {
     return (
       <div className="app-shell">
         <div className="signin-screen">
           <span className="signin-logo">Order<span>Manager</span></span>
           <div className="signin-card">
-            <p>Sign in with your Microsoft account to continue.</p>
-            <button className="btn-primary" onClick={() => instance.loginRedirect(loginRequest)}>
-              Sign in with Microsoft
+            <p>Sign in to continue.</p>
+            <button className="btn-primary" onClick={() => auth.signinRedirect()}>
+              Sign in
             </button>
           </div>
         </div>
@@ -67,7 +65,7 @@ function App() {
         <div className="topbar-spacer" />
         <AccountSelector selectedId={selectedAccountId} onSelect={setSelectedAccountId} />
         <div className="topbar-divider" />
-        <button className="btn-secondary" onClick={() => instance.logoutRedirect()}>Sign out</button>
+        <button className="btn-secondary" onClick={() => signOut()}>Sign out</button>
       </header>
 
       <div className="app-body">

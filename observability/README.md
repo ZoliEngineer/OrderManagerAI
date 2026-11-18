@@ -32,8 +32,8 @@ jvm_memory_used_bytes{area="heap"}                                    # gauge
 ```
 
 ## Alert rules
-`prometheus/rules/ordermanager.yml` has recording rules and alerts (TargetDown, HighErrorRate, RiskFailSafeRejects, RingBufferPressure, StalePrices). The same file is used locally and in Azure.
-Alerts show up in Prometheus -> Alerts (http://localhost:9091/alerts): *inactive -> pending (condition true, waiting out `for:`) -> firing*. In Azure use Grafana -> Explore -> `ALERTS{alertstate="firing"}`. Nothing is sent anywhere.
+`prometheus/rules/ordermanager.yml` has recording rules and alerts (TargetDown, HighErrorRate, RiskFailSafeRejects, RingBufferPressure, StalePrices). The same file is used locally and on AWS.
+Alerts show up in Prometheus -> Alerts (http://localhost:9091/alerts): *inactive -> pending (condition true, waiting out `for:`) -> firing*. On AWS use Grafana -> Explore -> `ALERTS{alertstate="firing"}`. Nothing is sent anywhere.
 
 Unit tests use fake input series, no server needed (also run by CI, job `prometheus-rules`):
 ```bash
@@ -48,19 +48,23 @@ Data source and dashboards are **provisioned from files** (`grafana/provisioning
 `docker compose down && up` restores everything. Provisioned dashboards are read-only in the UI: to change one,
 edit it, use *Export → Save to file* (JSON), and replace the file in `grafana/dashboards/`.
 
-## Azure (off by default)
-Prometheus and Grafana run as Container Apps next to the services (`terraform/main.tf`, `module.prometheus` and `module.grafana`), only when `observability_enabled=true`. That also keeps the scraped services at one replica (always-on cost), so turn it on for testing and off again afterwards.
-Prometheus gets its config from `prometheus/prometheus.azure.yml.tpl`, rendered by Terraform and mounted as a secret. Risk is not scraped (gRPC-only ingress).
+## AWS (off by default)
+Prometheus and Grafana run as two more ECS services next to the app (`terraform/observability.tf`), only when `observability_enabled = true`. Like every service they start at desired count 0 and cost about $0.04/hour while running.
+
+- **Prometheus** is private. It scrapes `<service>.ordermanagerai.local` through Cloud Map, using `prometheus/prometheus.aws.yml` (same job names as the local file) baked into its image by `prometheus/Dockerfile` together with the rules. Data is on the task's ephemeral storage and is lost on restart.
+- **Grafana** is public at `<cloudfront url>/grafana/`, behind its own login (user `admin`, the password you set). Provisioning and dashboards are baked into its image; `PROMETHEUS_URL` points at `http://prometheus.ordermanagerai.local:9090`.
+- **Risk is scraped** here (its actuator is on 8083, inside the VPC). The advisor's metrics are at `/advisor/actuator/prometheus` because it runs under the `/advisor` context path; that path is blocked at the load balancer for the public.
 
 ```bash
-# 1. Infrastructure: Prometheus + Grafana apps, scraped services at min 1 replica. Needs a Grafana admin password.
-cd terraform && export TF_VAR_grafana_admin_password='<choose one>' && terraform apply -var observability_enabled=true
-# 2. Build and deploy all images (a branch deploy replaces the running prod images, so use this only for testing)
-gh workflow run deploy.yml --ref <branch>
-# 3. First time only: GitHub -> Packages -> ordermanagerai-grafana -> Package settings -> make public
-terraform output grafana_url      # open it, log in as admin
+# 1. Infrastructure. Needs GRAFANA_ADMIN_PASSWORD (at least 12 characters) in .env; tf-env.sh exports it for Terraform.
+cd terraform && source ./tf-env.sh && terraform apply -var observability_enabled=true
+# 2. Images: deploy.yml builds and pushes the prometheus and grafana images on every deploy (run it once after step 1)
+gh workflow run deploy.yml
+# 3. Start everything (tasks and ALB), then open Grafana and log in as admin
+cd .. && ./scripts/env.sh up
+terraform -chdir=terraform output grafana_url
 ```
-Verify: Grafana -> Explore -> Prometheus -> `up` (all 1 except riskservice, which is not scraped) -> Dashboards -> Service Detail.
-Turn it off again: `terraform apply` (default `observability_enabled=false` removes both apps and lets services scale to zero).
+Verify: Grafana -> Explore -> Prometheus -> `up` (all 1) -> Dashboards -> Service Detail.
+Turn it off again: `scripts/env.sh down` stops everything; `terraform apply` with `observability_enabled=false` removes the two services.
 
-**Why failures happen, in Azure:** `az containerapp logs show -n <app> -g <resource-group> --follow` (or `--type system` for platform events such as image pull or restarts).
+**Why failures happen, on AWS:** `aws logs tail /ecs/ordermanagerai-prod-<service> --follow` (service = order, risk, ...). Platform events such as image pull failures, restarts and failed health checks: `aws ecs describe-services --cluster ordermanagerai-prod --services ordermanagerai-prod-<service> --query 'services[0].events[:10]'`.

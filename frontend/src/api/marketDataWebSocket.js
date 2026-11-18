@@ -1,6 +1,8 @@
+import { config } from '../config';
+
 export function connectMarketDataStream(onMessage, onError, token) {
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsBase = (process.env.REACT_APP_WS_BASE || `${wsProtocol}//${window.location.host}`)
+  const wsBase = (config.wsBase || `${wsProtocol}//${window.location.host}`)
     .replace(/^wss?:/, wsProtocol);
   const ws = new WebSocket(`${wsBase}/ws/marketdata`);
 

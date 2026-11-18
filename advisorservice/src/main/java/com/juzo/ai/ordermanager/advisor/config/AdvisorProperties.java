@@ -21,5 +21,5 @@ public record AdvisorProperties(
         Ui ui,
         boolean webSearchDynamicFiltering) {
 
-    public record Ui(String tenantId, String clientId, String scope) {}
+    public record Ui(String authority, String clientId, String scope, String logoutUrl) {}
 }

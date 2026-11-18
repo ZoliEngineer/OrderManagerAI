@@ -1,4 +1,4 @@
-# Rules evaluated everywhere (local and Azure). Tested by tests/ordermanager.test.yml.
+# Rules evaluated everywhere (local and AWS). Tested by tests/ordermanager.test.yml.
 groups:
   # Recording rules: compute an expensive or reused expression once, store it as a new series.
   # Naming convention: level:metric:operations (here: per job, HTTP requests, 5m rate).
@@ -16,7 +16,7 @@ groups:
       # `and ... > 0.1` is the minimum-volume guard: below ~30 requests per 5 minutes one failure
       # is 50% and would page for nothing. A ratio alone is meaningless without volume.
       # The "is it up" alert: Prometheus could not scrape the service's /actuator/prometheus.
-      # Risk is not scraped in Azure (gRPC-only ingress); its failures show up as RiskFailSafeRejects.
+      # Risk is scraped on its actuator port (8083); its failures also show up as RiskFailSafeRejects on the order side.
       - alert: TargetDown
         expr: up == 0
         for: 1m

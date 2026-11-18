@@ -1,4 +1,14 @@
-name: Deploy to Azure
+name: Deploy to AWS
+
+# Builds every service, pushes images to ECR, uploads the frontend to S3/CloudFront and rolls the ECS services.
+# Infrastructure (terraform/) is applied manually, not from this workflow.
+#
+# Required repository secrets: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY (access key of the IAM user in
+# `terraform output github_deploy_user`; GitHub OIDC is blocked in this account).
+# Required repository variables (values from `terraform output`):
+#   FRONTEND_BUCKET              frontend_bucket
+#   CLOUDFRONT_DISTRIBUTION_ID   cloudfront_distribution_id
+# Optional: AWS_REGION (default us-east-2), ECS_CLUSTER (default ordermanagerai-prod).
 
 on:
   workflow_run:
@@ -9,342 +19,145 @@ on:
 
 permissions:
   contents: read
-  packages: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'ordermanagerai-prod' }}
+  PREFIX: ordermanagerai
 
 jobs:
-  build-and-deploy:
+  images:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    env:
-      RG: ordermanagerai-prod-rg
-      BACKEND_FQDN: ''
-      ACCOUNTSERVICE_FQDN: ''
-      ORDERSERVICE_FQDN: ''
-      RISKSERVICE_FQDN: ''
-      MCPSERVICE_FQDN: ''
-      ADVISORSERVICE_FQDN: ''
-
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dir: marketdata,       name: marketdata,  maven: true }
+          - { dir: accountservice,   name: account,     maven: true }
+          - { dir: orderservice,     name: order,       maven: true }
+          - { dir: riskservice,      name: risk,        maven: true }
+          - { dir: executionservice, name: execution,   maven: true }
+          - { dir: mcpservice,       name: mcp,         maven: true }
+          - { dir: advisorservice,   name: advisor,     maven: true }
+          # Optional observability images (config baked in); only deployed when terraform observability_enabled=true
+          - { dir: observability/prometheus, name: prometheus, maven: false }
+          - { dir: observability/grafana,    name: grafana,    maven: false }
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set GHCR prefix (lowercase owner required by ghcr.io)
-        run: echo "GHCR_PREFIX=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
       - uses: actions/setup-java@v4
+        if: matrix.maven
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
+      - name: Build JAR
+        if: matrix.maven
+        run: cd ${{ matrix.dir }} && mvn clean package -DskipTests -B
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Registry is the only cloud-specific input; the Dockerfiles are cloud-neutral.
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="$REGISTRY/${PREFIX}-${{ matrix.name }}"
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" ${{ matrix.dir }}/
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+  frontend:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
 
-      # Build artifacts
-      - name: Build backend JAR
-        run: cd marketdata && mvn clean package -DskipTests -B
-
-      - name: Build account service JAR
-        run: cd accountservice && mvn clean package -DskipTests -B
-
-      - name: Build order service JAR
-        run: cd orderservice && mvn clean package -DskipTests -B
-
-      - name: Build risk service JAR
-        run: cd riskservice && mvn clean package -DskipTests -B
-
-      - name: Build execution service JAR
-        run: cd executionservice && mvn clean package -DskipTests -B
-
-      - name: Build MCP service JAR
-        run: cd mcpservice && mvn clean package -DskipTests -B
-
-      - name: Build advisor service JAR
-        run: cd advisorservice && mvn clean package -DskipTests -B
-
-      - name: Build frontend
+      # No environment-specific values at build time: the app reads /config.json (written by Terraform) at runtime.
+      - name: Build
         run: cd frontend && npm ci && npm run build
 
-      # Login to Azure early so we can query backend FQDNs before
-      # building the frontend Docker image (URLs are baked in at build time).
-      - name: Azure Login
-        uses: azure/login@v2
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get backend FQDN
+      - name: Upload to S3
         run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-marketdata \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "BACKEND_FQDN=$FQDN" >> $GITHUB_ENV
+          BUCKET="${{ vars.FRONTEND_BUCKET }}"
+          # config.json is owned by Terraform: never upload or delete it here.
+          aws s3 sync frontend/build "s3://$BUCKET" --delete \
+            --exclude config.json --exclude index.html \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 cp frontend/build/index.html "s3://$BUCKET/index.html" \
+            --cache-control "no-cache" --content-type text/html
 
-      - name: Get account service FQDN
+      - name: Invalidate CloudFront
         run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-acct-svc \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "ACCOUNTSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" --paths "/index.html" "/"
 
-      - name: Get order service FQDN
-        run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-order-svc \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "ORDERSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+  deploy:
+    needs: [images, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Get risk service FQDN
+      # Task definitions point at :latest, so a forced deployment pulls the image pushed above.
+      # Services scaled to 0 (env-down) just pick the new image up on the next env-up.
+      # Prometheus and Grafana exist only when Terraform ran with observability_enabled=true; skipped otherwise.
+      - name: Roll ECS services
         run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-risk-svc \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "RISKSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
+          DEPLOYED=""
+          for svc in marketdata account order risk execution mcp advisor prometheus grafana; do
+            name="${PREFIX}-prod-${svc}"
+            status=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$name" \
+              --query 'services[0].status' --output text 2>/dev/null || true)
+            if [ "$status" = "ACTIVE" ]; then
+              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$name" \
+                --force-new-deployment --query 'service.serviceName' --output text
+              DEPLOYED="$DEPLOYED $name"
+            else
+              echo "ℹ️ $name not deployed - skipping"
+            fi
+          done
+          echo "DEPLOYED_SERVICES=$DEPLOYED" >> "$GITHUB_ENV"
 
-      - name: Get MCP service FQDN
+      - name: Wait for stability and check running counts
         run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-mcp-svc \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "MCPSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
-
-      - name: Get advisor service FQDN
-        run: |
-          FQDN=$(az containerapp show \
-            --name ordermanagerai-prod-advisor-svc \
-            --resource-group "$RG" \
-            --query "properties.configuration.ingress.fqdn" -o tsv)
-          echo "ADVISORSERVICE_FQDN=$FQDN" >> $GITHUB_ENV
-
-      # Docker build & push
-      - name: Login to GitHub Container Registry
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io \
-            -u "${{ github.actor }}" --password-stdin
-
-      - name: Build and push marketdata image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-marketdata:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-marketdata:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" marketdata/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push account service image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-accountservice:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-accountservice:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" accountservice/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push order service image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-orderservice:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-orderservice:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" orderservice/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push risk service image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-riskservice:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-riskservice:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" riskservice/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push execution service image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-executionservice:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-executionservice:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" executionservice/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push MCP service image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-mcpservice:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-mcpservice:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" mcpservice/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push advisor service image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-advisorservice:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-advisorservice:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" advisorservice/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      - name: Build and push grafana image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-grafana:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-grafana:latest"
-          docker build -t "$TAG" -t "$TAG_LATEST" observability/grafana/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      # REACT_APP_* URLs are derived from live Container App FQDNs fetched
-      # above — no hardcoded URLs needed.
-      - name: Build and push frontend image
-        run: |
-          TAG="${GHCR_PREFIX}/ordermanagerai-frontend:${{ github.sha }}"
-          TAG_LATEST="${GHCR_PREFIX}/ordermanagerai-frontend:latest"
-          docker build \
-            --build-arg REACT_APP_API_URL="https://${{ env.BACKEND_FQDN }}" \
-            --build-arg REACT_APP_WS_BASE="wss://${{ env.BACKEND_FQDN }}" \
-            --build-arg REACT_APP_ACCOUNTS_API_URL="https://${{ env.ACCOUNTSERVICE_FQDN }}" \
-            --build-arg REACT_APP_ORDERS_API_URL="https://${{ env.ORDERSERVICE_FQDN }}" \
-            --build-arg REACT_APP_AAD_CLIENT_ID="${{ vars.AAD_CLIENT_ID }}" \
-            --build-arg REACT_APP_AAD_TENANT_ID="${{ vars.AAD_TENANT_ID }}" \
-            --build-arg REACT_APP_AAD_SCOPE="${{ vars.AAD_SCOPE }}" \
-            -t "$TAG" -t "$TAG_LATEST" frontend/
-          docker push "$TAG"
-          docker push "$TAG_LATEST"
-
-      # az containerapp update replaces the running revision with the new image.
-      - name: Deploy marketdata service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-marketdata \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-marketdata:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-marketdata \
-            --resource-group "$RG" \
-            --target-port 8080
-
-      - name: Deploy frontend
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-frontend \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-frontend:${{ github.sha }}"
-
-      - name: Deploy account service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-acct-svc \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-accountservice:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-acct-svc \
-            --resource-group "$RG" \
-            --target-port 8081
-
-      - name: Deploy order service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-order-svc \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-orderservice:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-order-svc \
-            --resource-group "$RG" \
-            --target-port 8082
-
-      - name: Deploy risk service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-risk-svc \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-riskservice:${{ github.sha }}"
-
-      - name: Deploy execution service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-exec-svc \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-executionservice:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-exec-svc \
-            --resource-group "$RG" \
-            --target-port 8086
-
-      - name: Deploy MCP service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-mcp-svc \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-mcpservice:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-mcp-svc \
-            --resource-group "$RG" \
-            --target-port 8084
-
-      - name: Deploy advisor service
-        run: |
-          az containerapp update \
-            --name ordermanagerai-prod-advisor-svc \
-            --resource-group "$RG" \
-            --image "${GHCR_PREFIX}/ordermanagerai-advisorservice:${{ github.sha }}"
-          az containerapp ingress update \
-            --name ordermanagerai-prod-advisor-svc \
-            --resource-group "$RG" \
-            --target-port 8085
-
-      # Skipped when Terraform ran with observability_enabled=false (the app does not exist).
-      - name: Deploy grafana
-        run: |
-          if az containerapp show --name ordermanagerai-prod-grafana --resource-group "$RG" >/dev/null 2>&1; then
-            az containerapp update \
-              --name ordermanagerai-prod-grafana \
-              --resource-group "$RG" \
-              --image "${GHCR_PREFIX}/ordermanagerai-grafana:${{ github.sha }}"
-          else
-            echo "grafana app not found - skipping"
-          fi
-
-      - name: Smoke test
-        run: |
-          echo "Waiting 30s for deployment to stabilize..."
-          sleep 30
+          SERVICES="$DEPLOYED_SERVICES"
+          # At most 9 services (the wait command accepts 10); returns immediately for services with desiredCount 0.
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services $SERVICES
           FAILED=0
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$BACKEND_FQDN/actuator/health")
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ Market data service smoke test failed (HTTP $STATUS)"
-            FAILED=1
-          else
-            echo "✅ Market data service smoke test passed"
-          fi
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ACCOUNTSERVICE_FQDN/actuator/health")
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ Account service smoke test failed (HTTP $STATUS)"
-            FAILED=1
-          else
-            echo "✅ Account service smoke test passed"
-          fi
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ORDERSERVICE_FQDN/actuator/health")
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ Order service smoke test failed (HTTP $STATUS)"
-            FAILED=1
-          else
-            echo "✅ Order service smoke test passed"
-          fi
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$MCPSERVICE_FQDN/actuator/health")
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ MCP service smoke test failed (HTTP $STATUS)"
-            FAILED=1
-          else
-            echo "✅ MCP service smoke test passed"
-          fi
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$ADVISORSERVICE_FQDN/actuator/health")
-          if [ "$STATUS" -ne 200 ]; then
-            echo "❌ Advisor service smoke test failed (HTTP $STATUS)"
-            FAILED=1
-          else
-            echo "✅ Advisor service smoke test passed"
-          fi
-          # Risk service ingress targets the gRPC port (9090/HTTP2); actuator health
-          # is on a separate internal port and not reachable via the external FQDN.
-          # gRPC availability is validated end-to-end by the order service smoke test.
-          echo "ℹ️ Risk service deployed (gRPC ingress — no HTTP health endpoint on external FQDN)"
-          # Execution service ingress is internal-only (actuator for Prometheus); not reachable from here.
-          echo "ℹ️ Execution service deployed (internal ingress — see its target in Prometheus)"
+          for s in $SERVICES; do
+            read -r DESIRED RUNNING < <(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$s" \
+              --query 'services[0].[desiredCount,runningCount]' --output text)
+            if [ "$RUNNING" -lt "$DESIRED" ]; then
+              echo "❌ $s: $RUNNING/$DESIRED running"; FAILED=1
+            elif [ "$DESIRED" -eq 0 ]; then
+              echo "ℹ️ $s: scaled to 0 (environment is down)"
+            else
+              echo "✅ $s: $RUNNING/$DESIRED running"
+            fi
+          done
           exit $FAILED

@@ -4,7 +4,7 @@ datasources:
     uid: prometheus            # dashboards refer to this uid, so it must be stable
     type: prometheus
     access: proxy              # Grafana's backend queries Prometheus (not the browser)
-    url: ${PROMETHEUS_URL}     # env var: http://prometheus:9090 locally (compose), internal FQDN in Azure
+    url: ${PROMETHEUS_URL}     # env var: http://prometheus:9090 locally (compose), http://prometheus.ordermanagerai.local:9090 on AWS
     isDefault: true
     jsonData:
-      tlsSkipVerify: true      # Azure internal ingress; no effect on plain http
+      tlsSkipVerify: true      # no effect on plain http

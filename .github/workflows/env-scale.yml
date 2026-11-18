@@ -1,0 +1,46 @@
+name: Environment — start / stop services
+
+# Starts or stops the ECS services (desired count 1 / 0). Fargate bills per second while tasks run.
+# The ALB (~$22/month) is not touched here — to remove it too, run scripts/env.sh down from a machine with
+# admin AWS credentials. See terraform/ for the alb_enabled switch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Start or stop all services
+        type: choice
+        options: [start, stop]
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'ordermanagerai-prod' }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Scale services
+        run: |
+          COUNT=$([ "${{ inputs.action }}" = "start" ] && echo 1 || echo 0)
+          # prometheus and grafana exist only when terraform ran with observability_enabled=true
+          for svc in marketdata account order risk execution mcp advisor prometheus grafana; do
+            name="ordermanagerai-prod-${svc}"
+            status=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$name" \
+              --query 'services[0].status' --output text 2>/dev/null || true)
+            if [ "$status" = "ACTIVE" ]; then
+              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$name" \
+                --desired-count "$COUNT" --query 'service.[serviceName,desiredCount]' --output text
+            else
+              echo "$name not deployed - skipping"
+            fi
+          done

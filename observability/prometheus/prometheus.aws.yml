@@ -1,0 +1,83 @@
+# AWS variant of prometheus.yml: runs as an ECS service inside the VPC and scrapes the other services by their
+# Cloud Map DNS names (<name>.ordermanagerai.local, registered by Terraform). Same job names and labels as the local
+# file, so the rules and Grafana dashboards work unchanged. Baked into the image by prometheus/Dockerfile.
+global:
+  scrape_interval: 30s      # slower than local: fewer samples
+  evaluation_interval: 30s
+
+# Same rules file as local. Nothing is sent anywhere: firing alerts are visible in Grafana (ALERTS{alertstate="firing"}).
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Drop actuator requests (scrapes, health probes) from HTTP metrics so they don't skew rate and latency.
+scrape_configs:
+  - job_name: marketdata
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["marketdata.ordermanagerai.local:8080"]
+        labels:
+          service: marketdata
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: accountservice
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["account.ordermanagerai.local:8081"]
+        labels:
+          service: account
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: orderservice
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["order.ordermanagerai.local:8082"]
+        labels:
+          service: order
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: riskservice
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["risk.ordermanagerai.local:8083"]
+        labels:
+          service: risk
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: mcpservice
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["mcp.ordermanagerai.local:8084"]
+        labels:
+          service: mcp
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: advisorservice
+    metrics_path: /advisor/actuator/prometheus
+    static_configs:
+      - targets: ["advisor.ordermanagerai.local:8085"]
+        labels:
+          service: advisor
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
+  - job_name: executionservice
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["execution.ordermanagerai.local:8086"]
+        labels:
+          service: execution
+    metric_relabel_configs:
+      - source_labels: [uri]
+        regex: /actuator.*
+        action: drop
