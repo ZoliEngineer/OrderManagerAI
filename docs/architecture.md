@@ -34,7 +34,7 @@ The target design (including services not yet built) is described in [requiremen
             │  PostgreSQL (orders)
             │  after commit → Kafka: order.created (ORDER_CREATED / ORDER_CANCELLED)
             ▼
-     Execution Service (no HTTP) ── Kafka consumer → LMAX Disruptor ring buffer
+     Execution Service (actuator only) ── Kafka consumer → LMAX Disruptor ring buffer
                                     → per-symbol matching engine (limit order book)
 
   Advisor chat page (/advisor/) ──REST + SSE, JWT (mcp.trade)──▶ Advisor Service :8085 ──Claude API (web_search, tool use)
@@ -99,8 +99,8 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 - **Response:** `APPROVED` / `REJECTED` with typed reason codes (`INSUFFICIENT_FUNDS`, `INSUFFICIENT_SHARES`, `BUYING_POWER_UNAVAILABLE`, `PRICE_UNAVAILABLE`, `INVALID_REQUEST`) and a `decision_id`.
 - **Why:** stateless and in-memory → millisecond latency. Rebuilding state by replaying Kafka illustrates why a log beats Pub/Sub for state reconstruction.
 
-### Execution Service (`executionservice/`, no HTTP) — Kafka + LMAX Disruptor
-- **Role:** mock exchange / matching engine (`spring.main.web-application-type=none`).
+### Execution Service (`executionservice/`, actuator only on 8086) — Kafka + LMAX Disruptor
+- **Role:** mock exchange / matching engine. Its only HTTP endpoint is the actuator on port 8086 (health + Prometheus metrics); on ECS it is used for the container health check and is not routed by the ALB.
 - **Flow:** `OrderEventConsumer` (Kafka `order.created`) translates events into pre-allocated slots on a **Disruptor ring buffer** (65,536 slots, `YieldingWaitStrategy`, multi-producer) → single-threaded `MatchingEngineDispatcher` → per-ticker `SymbolMatchingEngine` → `LimitOrderBook`.
 - **Order book:** bids/asks in price-sorted `TreeMap`s with FIFO `ArrayDeque`s per price level (price-time priority); O(1) lazy cancellation via an id index.
 - **Why:** the canonical low-latency exchange design — single writer, lock-free, allocation-free hot path, deterministic ordering.

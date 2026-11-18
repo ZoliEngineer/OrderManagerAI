@@ -15,17 +15,13 @@ KAFKA_CLUSTER_API_SECRET=$(_get KAFKA_CLUSTER_API_SECRET)
 SPRING_DATASOURCE_PASSWORD=$(_get SPRING_DATASOURCE_PASSWORD)
 FINNHUB_API_KEY=$(_get FINNHUB_API_KEY)
 ANTHROPIC_API_KEY=$(_get ANTHROPIC_API_KEY)
-GRAFANA_ADMIN_PASSWORD=$(_get GRAFANA_ADMIN_PASSWORD)
 
 export TF_VAR_redis_password="$REDIS_PASSWORD"
 export TF_VAR_kafka_cluster_api_key="$KAFKA_CLUSTER_API_KEY"
 export TF_VAR_kafka_cluster_api_secret="$KAFKA_CLUSTER_API_SECRET"
-export TF_VAR_supabase_db_password="$SPRING_DATASOURCE_PASSWORD"   # orderservice's DB (Supabase)
-# Despite the name, accountservice also connects to Supabase as ordermanager_user: same password as orderservice.
-export TF_VAR_neon_db_password="$SPRING_DATASOURCE_PASSWORD"
+# Account and order services both connect to Supabase as ordermanager_user.
+export TF_VAR_db_password="$SPRING_DATASOURCE_PASSWORD"
 export TF_VAR_finnhub_api_key="${FINNHUB_API_KEY:-}"
 export TF_VAR_anthropic_api_key="${ANTHROPIC_API_KEY:-}"
-# Only needed with observability_enabled=true
-export TF_VAR_grafana_admin_password="${GRAFANA_ADMIN_PASSWORD:-}"
-unset _env REDIS_PASSWORD KAFKA_CLUSTER_API_KEY KAFKA_CLUSTER_API_SECRET SPRING_DATASOURCE_PASSWORD FINNHUB_API_KEY ANTHROPIC_API_KEY GRAFANA_ADMIN_PASSWORD
+unset _env REDIS_PASSWORD KAFKA_CLUSTER_API_KEY KAFKA_CLUSTER_API_SECRET SPRING_DATASOURCE_PASSWORD FINNHUB_API_KEY ANTHROPIC_API_KEY
 unset -f _get

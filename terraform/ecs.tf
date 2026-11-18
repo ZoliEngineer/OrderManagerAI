@@ -179,7 +179,7 @@ module "risk" {
   )
 }
 
-# Kafka-only; no listener.
+# Kafka-driven; its only HTTP endpoint is the actuator on 8086 (container health check, not published).
 module "execution" {
   source = "./modules/ecs-service"
   name   = "${local.prefix}-execution"
@@ -197,6 +197,7 @@ module "execution" {
   desired_count          = local.common.desired_count
   alb_enabled            = local.common.alb_enabled
   listener_arn           = local.common.listener_arn
+  health_port            = 8086
 
   secrets = local.kafka_secrets
 }
