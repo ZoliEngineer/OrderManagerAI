@@ -126,7 +126,7 @@
         "defaults": {},
         "overrides": []
       },
-      "description": "Risk is scraped locally only: in Azure its actuator has no ingress (see docs/observability.md)."
+      "description": "Risk is scraped locally and on AWS (actuator on 8083, inside the VPC); see docs/observability.md."
     },
     {
       "id": 4,

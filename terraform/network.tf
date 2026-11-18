@@ -80,6 +80,14 @@ resource "aws_security_group" "services" {
   }
 
   ingress {
+    description     = "Grafana from the ALB (only used when observability_enabled)"
+    from_port       = 3000
+    to_port         = 3000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  ingress {
     description = "Service-to-service (REST, gRPC 9090)"
     from_port   = 0
     to_port     = 65535

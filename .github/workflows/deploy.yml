@@ -33,23 +33,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { dir: marketdata,       name: marketdata }
-          - { dir: accountservice,   name: account }
-          - { dir: orderservice,     name: order }
-          - { dir: riskservice,      name: risk }
-          - { dir: executionservice, name: execution }
-          - { dir: mcpservice,       name: mcp }
-          - { dir: advisorservice,   name: advisor }
+          - { dir: marketdata,       name: marketdata,  maven: true }
+          - { dir: accountservice,   name: account,     maven: true }
+          - { dir: orderservice,     name: order,       maven: true }
+          - { dir: riskservice,      name: risk,        maven: true }
+          - { dir: executionservice, name: execution,   maven: true }
+          - { dir: mcpservice,       name: mcp,         maven: true }
+          - { dir: advisorservice,   name: advisor,     maven: true }
+          # Optional observability images (config baked in); only deployed when terraform observability_enabled=true
+          - { dir: observability/prometheus, name: prometheus, maven: false }
+          - { dir: observability/grafana,    name: grafana,    maven: false }
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
+        if: matrix.maven
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: 'maven'
 
       - name: Build JAR
+        if: matrix.maven
         run: cd ${{ matrix.dir }} && mvn clean package -DskipTests -B
 
       - uses: aws-actions/configure-aws-credentials@v4
@@ -120,18 +125,28 @@ jobs:
 
       # Task definitions point at :latest, so a forced deployment pulls the image pushed above.
       # Services scaled to 0 (env-down) just pick the new image up on the next env-up.
+      # Prometheus and Grafana exist only when Terraform ran with observability_enabled=true; skipped otherwise.
       - name: Roll ECS services
         run: |
-          for svc in marketdata account order risk execution mcp advisor; do
-            aws ecs update-service --cluster "$ECS_CLUSTER" --service "${PREFIX}-prod-${svc}" \
-              --force-new-deployment --query 'service.serviceName' --output text
+          DEPLOYED=""
+          for svc in marketdata account order risk execution mcp advisor prometheus grafana; do
+            name="${PREFIX}-prod-${svc}"
+            status=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$name" \
+              --query 'services[0].status' --output text 2>/dev/null || true)
+            if [ "$status" = "ACTIVE" ]; then
+              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$name" \
+                --force-new-deployment --query 'service.serviceName' --output text
+              DEPLOYED="$DEPLOYED $name"
+            else
+              echo "ℹ️ $name not deployed - skipping"
+            fi
           done
+          echo "DEPLOYED_SERVICES=$DEPLOYED" >> "$GITHUB_ENV"
 
       - name: Wait for stability and check running counts
         run: |
-          SERVICES=""
-          for svc in marketdata account order risk execution mcp advisor; do SERVICES="$SERVICES ${PREFIX}-prod-${svc}"; done
-          # Waits in batches of 10 (we have 7); returns immediately for services with desiredCount 0.
+          SERVICES="$DEPLOYED_SERVICES"
+          # At most 9 services (the wait command accepts 10); returns immediately for services with desiredCount 0.
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services $SERVICES
           FAILED=0
           for s in $SERVICES; do

@@ -183,6 +183,17 @@ class McpServerIntegrationTest {
                 "ordermanager/mcp.trade");
     }
 
+    /** ECS container health checks call these without a token; a 401 here would restart every task. */
+    @Test
+    void healthGroups_arePublic() throws Exception {
+        for (String path : new String[] {"/actuator/health", "/actuator/health/liveness", "/actuator/health/readiness"}) {
+            HttpResponse<String> response = HttpClient.newHttpClient().send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).as(path).isEqualTo(200);
+        }
+    }
+
     private HttpResponse<String> post(String token) throws Exception {
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/mcp"))
                 .header("Content-Type", "application/json")

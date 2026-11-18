@@ -117,9 +117,9 @@ variable "alb_rules" {
 }
 
 variable "health_path" {
-  description = "Path of the Spring Boot health endpoint (includes the context path, if any)."
+  description = "Path used by the container and load balancer health checks (includes the context path, if any). Spring Boot liveness group by default, so a down dependency does not restart the task."
   type        = string
-  default     = "/actuator/health"
+  default     = "/actuator/health/liveness"
 }
 
 variable "origin_verify" {

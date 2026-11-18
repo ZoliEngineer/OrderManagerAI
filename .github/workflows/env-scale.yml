@@ -32,7 +32,15 @@ jobs:
       - name: Scale services
         run: |
           COUNT=$([ "${{ inputs.action }}" = "start" ] && echo 1 || echo 0)
-          for svc in marketdata account order risk execution mcp advisor; do
-            aws ecs update-service --cluster "$ECS_CLUSTER" --service "ordermanagerai-prod-${svc}" \
-              --desired-count "$COUNT" --query 'service.[serviceName,desiredCount]' --output text
+          # prometheus and grafana exist only when terraform ran with observability_enabled=true
+          for svc in marketdata account order risk execution mcp advisor prometheus grafana; do
+            name="ordermanagerai-prod-${svc}"
+            status=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$name" \
+              --query 'services[0].status' --output text 2>/dev/null || true)
+            if [ "$status" = "ACTIVE" ]; then
+              aws ecs update-service --cluster "$ECS_CLUSTER" --service "$name" \
+                --desired-count "$COUNT" --query 'service.[serviceName,desiredCount]' --output text
+            else
+              echo "$name not deployed - skipping"
+            fi
           done

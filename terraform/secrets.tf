@@ -9,7 +9,8 @@ locals {
       ANTHROPIC_API_KEY        = var.anthropic_api_key
     },
     # A present-but-empty key would switch marketdata to the live Finnhub feed, so only add it when set.
-    var.finnhub_api_key != "" ? { FINNHUB_API_KEY = var.finnhub_api_key } : {}
+    var.finnhub_api_key != "" ? { FINNHUB_API_KEY = var.finnhub_api_key } : {},
+    var.observability_enabled ? { GRAFANA_ADMIN_PASSWORD = var.grafana_admin_password } : {}
   )
 
   secret_ref = { for k, _ in local.secret_values : k => "${aws_secretsmanager_secret.app.arn}:${k}::" }

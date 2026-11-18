@@ -54,3 +54,4 @@ mcpservice/target/*
 
 # Maven build output (all modules)
 **/target/
+terraform/.terraform/

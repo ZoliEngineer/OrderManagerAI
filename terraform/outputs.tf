@@ -67,3 +67,8 @@ output "github_deploy_user" {
   description = "Create an access key for this user and store it as the GitHub secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY."
   value       = aws_iam_user.github_deploy.name
 }
+
+output "grafana_url" {
+  description = "Grafana (login: admin). Null unless observability_enabled."
+  value       = var.observability_enabled ? "${local.app_origin}/grafana/" : null
+}

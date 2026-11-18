@@ -89,3 +89,16 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+
+variable "observability_enabled" {
+  description = "Create the Prometheus and Grafana ECS services (Grafana at /grafana/ on the CloudFront address). They start at desired count 0 like the others; costs about $0.04/hour while running."
+  type        = bool
+  default     = false
+}
+
+variable "grafana_admin_password" {
+  description = "Grafana admin password (user: admin). Required, at least 12 characters, when observability_enabled = true: Grafana is reachable from the internet."
+  type        = string
+  sensitive   = true
+  default     = ""
+}

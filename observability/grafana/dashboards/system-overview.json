@@ -200,7 +200,7 @@
         },
         "overrides": []
       },
-      "description": "Target >= 99%. Local only (risk is not scraped in Azure)."
+      "description": "Target >= 99%. Risk is scraped locally and on AWS (actuator on 8083)."
     },
     {
       "id": 12,

@@ -12,6 +12,9 @@ db_password              = ""
 anthropic_api_key        = ""
 finnhub_api_key          = ""
 
+# Prometheus + Grafana (Grafana at <cloudfront url>/grafana/, login: admin). Needs TF_VAR_grafana_admin_password.
+# observability_enabled = true
+
 # Cost levers
 # alb_enabled           = false   # tear the ALB down when idle
 # use_spot              = true

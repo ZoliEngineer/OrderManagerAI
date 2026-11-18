@@ -1,6 +1,6 @@
 # One CloudFront distribution is the whole public front door (HTTPS on *.cloudfront.net, no custom domain):
 #   /              → S3 (React SPA, config.json)
-#   /api/* /ws/* /mcp* /.well-known/* /advisor*  → ALB (HTTP) → ECS services
+#   /api/* /ws/* /mcp* /.well-known/* /advisor* /grafana*  → ALB (HTTP) → ECS services
 # Same origin for everything, so the browser needs no CORS.
 data "aws_cloudfront_cache_policy" "optimized" {
   name = "Managed-CachingOptimized"
@@ -41,7 +41,7 @@ resource "aws_cloudfront_function" "spa_rewrite" {
 locals {
   # The ALB gets a new DNS name each time it is re-created, so the origin is updated on every env up/down.
   alb_origin_domain = var.alb_enabled ? aws_lb.main[0].dns_name : "alb-disabled.example.com"
-  alb_paths         = ["/api/*", "/ws/*", "/mcp*", "/.well-known/*", "/advisor*"]
+  alb_paths         = ["/api/*", "/ws/*", "/mcp*", "/.well-known/*", "/advisor*", "/grafana*"]
 }
 
 resource "aws_cloudfront_distribution" "main" {

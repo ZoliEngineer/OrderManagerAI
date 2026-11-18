@@ -148,7 +148,7 @@ All backend services are Java 21 / Spring Boot 4.0.5, packaged under `com.juzo.a
 | Containers | Docker | Temurin 21 JRE Alpine per Java service, heap sized from the container limit (`-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError`). |
 | Hosting | AWS ECS Fargate (0.25 vCPU / 1 GB per service), public subnets, no NAT | See "AWS deployment" below. Fargate has no scale-to-zero: "off" means desired count 0 (`scripts/env.sh`, `env-scale.yml`). |
 | IaC | Terraform (aws provider) | Reusable `modules/ecs-service`; task definitions use the `:latest` image tag, so CI only forces a new deployment. State in an S3 bucket with native locking — run `terraform/bootstrap.sh` before the first `terraform apply`. |
-| Observability | Micrometer → Prometheus (pull) → Grafana | Every service exposes `/actuator/prometheus`; Prometheus rules alert on down / 5xx / failsafe rejects. Logs go to stdout (CloudWatch Logs on ECS). Local compose stack only; the cloud-hosted copy has not been ported to AWS yet. See [observability.md](observability.md). |
+| Observability | Micrometer → Prometheus (pull) → Grafana | Every service exposes `/actuator/prometheus`; Prometheus rules alert on down / 5xx / failsafe rejects. Logs go to stdout (CloudWatch Logs on ECS). Local compose stack, or optional Prometheus + Grafana ECS services on AWS (`observability_enabled`; Grafana at `/grafana/`, login required). ECS health checks use the liveness group (`/actuator/health/liveness`). See [observability.md](observability.md). |
 | Secrets | AWS Secrets Manager (one JSON secret) injected into task definitions; `.env` locally | Loaded via `spring.config.import=optional:file:../.env[.properties]`. Hosts and usernames stay explicit in `application.properties`; only secrets and OIDC settings are env vars. |
 | Registry | Amazon ECR (private, last 3 images kept) | Pulled by the task execution role. |
 
@@ -159,16 +159,18 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 ```
  Browser ── https://<id>.cloudfront.net (one origin: no CORS, no custom domain) ──▶ CloudFront
           /                                            ─▶ S3 (SPA + config.json)
-          /api/*, /ws/*, /mcp*, /.well-known/*, /advisor*  ─▶ ALB (HTTP, only reachable from CloudFront, idle timeout 900 s)
+          /api/*, /ws/*, /mcp*, /.well-known/*, /advisor*, /grafana*  ─▶ ALB (HTTP, only reachable from CloudFront, idle timeout 900 s)
               /api/marketdata*, /api/market-status*, /ws/*  ─▶ marketdata :8080
               /api/accounts*                                 ─▶ account    :8081
               /api/orders*                                   ─▶ order      :8082
               /mcp*, /.well-known/*                          ─▶ mcp        :8084
-              /advisor*  (context path /advisor)             ─▶ advisor    :8085
+              /advisor*  (context path /advisor)             ─▶ advisor    :8085   (/advisor/actuator* answers 403)
+              /grafana*  (only if observability_enabled)     ─▶ grafana    :3000
 
  Inside the VPC (Cloud Map DNS, namespace ordermanagerai.local, plain HTTP / gRPC):
    order ─▶ risk.ordermanagerai.local:9090 (gRPC)     order ─▶ marketdata:8080
    mcp   ─▶ order:8082, marketdata:8080               advisor ─▶ mcp:8084/mcp
+   prometheus (optional) ─▶ every service's actuator   grafana (optional) ─▶ prometheus:9090
 ```
 
 - **Network:** one VPC with two public subnets and **no NAT gateway** (a NAT would cost about $33/month). Tasks get public IPs so they can reach Kafka, Redis, Postgres, the Claude API and Cognito; security groups allow inbound only from the ALB and from other tasks. Risk is no longer reachable from the internet.
@@ -177,12 +179,13 @@ Runtime config for each service lives in `<service>/src/main/resources/applicati
 - **Region:** us-east-2 (the account's assigned Region; regional services are blocked elsewhere). Supabase (us-east-1) is one cross-Region hop away.
 - **TLS / front door:** CloudFront's default `*.cloudfront.net` certificate terminates HTTPS; the ALB only speaks HTTP and accepts only CloudFront's address range plus a secret `X-Origin-Verify` header (anything else gets 403). A CloudFront Function does SPA routing for the S3 behaviour only, so API errors are not rewritten. CloudFront waits at most 60 s for origin bytes, so the advisor sends an SSE keep-alive comment every 15 s. The Tomcat services that build absolute URLs (MCP, advisor) read the scheme from `CloudFront-Forwarded-Proto`.
 - **ALB address changes:** the ALB gets a new DNS name each time `scripts/env.sh up` re-creates it, so CloudFront's origin is updated each time (a few minutes).
+- **Observability (optional):** with `observability_enabled = true`, Prometheus (private, scrapes the services by Cloud Map name) and Grafana (public at `/grafana/`, admin password from Secrets Manager) run as two more ECS services. About $0.04/hour while running; `scripts/env.sh` and `env-scale.yml` start and stop them with the rest.
 - **Cost control:** services start at desired count 0. With the ALB removed and tasks stopped, the floor is a few dollars a month (Secrets Manager, ECR). `AWS Budgets` alerts at 80% actual / 100% forecast.
 - **Still outside AWS:** Redis Cloud and Confluent Cloud are third-party SaaS and keep their current hosts (their clusters are in Azure regions, so traffic to them crosses clouds); Supabase Postgres is on AWS us-east-1.
 
 ## CI/CD (`.github/workflows/`)
 - **ci.yml** — on every push/PR; uses a paths filter to run `mvn clean verify -B` only for changed services (marketdata, accountservice, orderservice, riskservice, mcpservice, advisorservice) and `npm ci && npm test` for the frontend; publishes test reports.
-- **deploy.yml** — runs after CI succeeds on `main` (or manually), authenticating to AWS with the access key of a dedicated IAM user stored as GitHub secrets (GitHub OIDC is blocked by this account's managed policy). A matrix job builds each JAR and pushes `<sha>` + `latest` images to ECR; the frontend job builds the SPA, syncs it to S3 (never touching Terraform's `config.json`) and invalidates CloudFront; the deploy job forces a new ECS deployment of every service and checks running vs desired counts. Needs repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` and variables `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID` (from `terraform output`).
+- **deploy.yml** — runs after CI succeeds on `main` (or manually), authenticating to AWS with the access key of a dedicated IAM user stored as GitHub secrets (GitHub OIDC is blocked by this account's managed policy). A matrix job builds each JAR (and the Prometheus and Grafana images) and pushes `<sha>` + `latest` images to ECR; the frontend job builds the SPA, syncs it to S3 (never touching Terraform's `config.json`) and invalidates CloudFront; the deploy job forces a new ECS deployment of every service that exists (Prometheus and Grafana only if observability is enabled) and checks running vs desired counts. Needs repository secrets `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` and variables `FRONTEND_BUCKET`, `CLOUDFRONT_DISTRIBUTION_ID` (from `terraform output`).
 - **env-scale.yml** — manual start/stop of all ECS services (desired count 1/0). `scripts/env.sh up|down` additionally creates/removes the ALB with Terraform (needs admin credentials).
 - **ai-code-review.yml** — Claude API reviews PR diffs, posts a comment, and auto-merges if approved.
 - **ai-issue-handler.yml** — Claude API turns issues labelled `bug` or `enhancement` into a feature branch + PR, validated by tests.

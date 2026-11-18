@@ -99,7 +99,9 @@ module "account" {
   listener_arn           = local.common.listener_arn
 
   container_port = 8081
-  environment    = local.http_env
+  discovery_name = "account" # scraped by Prometheus
+
+  environment = local.http_env
   secrets = {
     SPRING_DATASOURCE_PASSWORD = local.secret_ref["DB_PASSWORD"]
     REDIS_PASSWORD             = local.secret_ref["REDIS_PASSWORD"]
@@ -198,6 +200,7 @@ module "execution" {
   alb_enabled            = local.common.alb_enabled
   listener_arn           = local.common.listener_arn
   health_port            = 8086
+  discovery_name         = "execution" # scraped by Prometheus
 
   secrets = local.kafka_secrets
 }
@@ -259,7 +262,8 @@ module "advisor" {
   listener_arn           = local.common.listener_arn
 
   container_port = 8085
-  health_path    = "/advisor/actuator/health" # the advisor runs under the /advisor context path
+  health_path    = "/advisor/actuator/health/liveness" # the advisor runs under the /advisor context path
+  discovery_name = "advisor"                           # scraped by Prometheus
   environment = merge(local.http_env, {
     MCP_SERVER_URL                         = "http://mcp.${local.ns}:8084/mcp"
     MCP_SCOPE                              = local.mcp_scope
@@ -272,5 +276,6 @@ module "advisor" {
   origin_verify = random_password.origin_verify.result
   alb_rules = [{
     priority = 50
+    paths    = ["/advisor*"]
   }]
 }

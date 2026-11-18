@@ -61,7 +61,7 @@ scrape_configs:
         regex: /actuator.*
         action: drop
   - job_name: advisorservice
-    metrics_path: /actuator/prometheus   # Spring Boot's path, not the default /metrics
+    metrics_path: /advisor/actuator/prometheus   # the advisor runs under the /advisor context path
     static_configs:
       - targets: ["host.docker.internal:8085"]
         labels:

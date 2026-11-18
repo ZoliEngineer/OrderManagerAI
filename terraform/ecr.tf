@@ -1,5 +1,5 @@
 locals {
-  services = ["marketdata", "account", "order", "risk", "execution", "mcp", "advisor"]
+  services = ["marketdata", "account", "order", "risk", "execution", "mcp", "advisor", "prometheus", "grafana"]
 }
 
 resource "aws_ecr_repository" "svc" {
