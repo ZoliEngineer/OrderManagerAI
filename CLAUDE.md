@@ -31,12 +31,14 @@ cd observability && docker compose up -d
 
 ### Frontend (React — `frontend/`)
 ```bash
-cd frontend && npm start     # dev server on :3000
-cd frontend && npm test      # run tests
-cd frontend && npm run build # production build
+cd frontend && npm start         # Vite dev server on :3000
+cd frontend && npm test          # Vitest
+cd frontend && npm run typecheck # tsc (strict); Vite itself does not type-check
+cd frontend && npm run lint      # typescript-eslint (type-aware)
+cd frontend && npm run build     # tsc + vite build → dist/
 ```
 
-In dev mode, `src/setupProxy.js` proxies `/api` and `/ws` requests to `http://localhost:8080`, so the frontend talks directly to the local backend without CORS issues.
+In dev mode, the `server.proxy` block in `vite.config.ts` routes `/api/accounts` → 8081, `/api/orders` → 8082 and other `/api` and `/ws` → 8080, so the frontend talks directly to the local backends without CORS issues.
 
 
 For major architecture, planning and service design tasks, see docs/requirements.md. Do not use it for coding, debugging, and general questions.
