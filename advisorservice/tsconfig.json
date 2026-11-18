@@ -1,0 +1,26 @@
+{
+  // Type-checks src/main/resources/static/app.js in place: plain JavaScript with JSDoc annotations.
+  // No build step and no output; the browser runs the file exactly as written.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // Only the declarations listed in `include`, not every @types package in node_modules.
+    "types": [],
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
+  },
+  "include": ["src/main/resources/static/**/*.js", "types/**/*.d.ts"]
+}

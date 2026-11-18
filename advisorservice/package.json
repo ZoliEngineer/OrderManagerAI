@@ -1,0 +1,17 @@
+{
+  "name": "advisorservice-web",
+  "private": true,
+  "description": "Type-checks the build-less chat page in src/main/resources/static. Nothing here is bundled or shipped: the browser runs app.js as written, and the libraries come from the CDN at the versions pinned below.",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "dompurify": "3.4.18",
+    "marked": "12.0.2",
+    "oidc-client-ts": "3.5.0",
+    "typescript": "6.0.3"
+  }
+}

@@ -24,6 +24,9 @@ cd marketdata && export $(cat ../.env | xargs) && mvn spring-boot:run
 # Trading advisor chat UI on http://localhost:8085 (requires ANTHROPIC_API_KEY in .env and mcpservice on :8084)
 cd advisorservice && export $(cat ../.env | xargs) && mvn spring-boot:run
 
+# Type-check the advisor chat page (plain JS + JSDoc, no build; keep package.json versions in step with the CDN tags in index.html)
+cd advisorservice && npm ci && npm run typecheck
+
 # Local observability stack (Prometheus on http://localhost:9091, Grafana on http://localhost:3001; see observability/README.md)
 cd observability && docker compose up -d
 ```

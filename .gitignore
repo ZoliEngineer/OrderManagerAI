@@ -56,3 +56,4 @@ mcpservice/target/*
 **/target/
 terraform/.terraform/
 frontend/dist/*
+advisorservice/node_modules/*

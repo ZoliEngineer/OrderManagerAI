@@ -35,7 +35,7 @@ resource "aws_s3_bucket_policy" "frontend" {
   policy = data.aws_iam_policy_document.frontend_bucket.json
 }
 
-# Runtime configuration read by src/config.js. The deploy job syncs the build with --exclude config.json.
+# Runtime configuration read by src/config.ts. The deploy job syncs the build with --exclude config.json.
 resource "aws_s3_object" "config" {
   bucket        = aws_s3_bucket.frontend.id
   key           = "config.json"

@@ -189,6 +189,16 @@ jobs:
       - name: Run advisor service tests
         run: cd advisorservice && mvn clean verify -B
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: advisorservice/package-lock.json
+
+      # The chat page is plain JavaScript; TypeScript checks its JSDoc types without building anything.
+      - name: Type-check chat page
+        run: cd advisorservice && npm ci && npm run typecheck
+
       - name: Publish test results
         uses: dorny/test-reporter@v1
         if: always()
