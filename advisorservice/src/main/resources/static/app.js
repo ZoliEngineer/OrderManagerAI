@@ -58,7 +58,7 @@ async function initAuth() {
 }
 
 function renderAuth() {
-  const signedIn = !!state.user && !state.user.expired;
+  const signedIn = !!state.user; // an expired access token is refreshed (or re-login started) by getToken()
   el.authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
   el.authButton.title = signedIn ? (state.user.profile.email || state.user.profile['cognito:username'] || state.user.profile.sub) : '';
   el.input.disabled = !signedIn;
@@ -371,11 +371,11 @@ function setBusy(busy) {
   state.busy = busy;
   updateSendState();
   document.querySelectorAll('.approval button').forEach(b => { b.disabled = busy; });
-  document.querySelectorAll('.suggestion').forEach(b => { b.disabled = busy || !state.account; });
+  document.querySelectorAll('.suggestion').forEach(b => { b.disabled = busy || !state.user; });
 }
 
 function updateSendState() {
-  el.send.disabled = state.busy || !state.account || !el.input.value.trim();
+  el.send.disabled = state.busy || !state.user || !el.input.value.trim();
 }
 
 function autoGrow() {
@@ -387,7 +387,7 @@ function autoGrow() {
 el.form.addEventListener('submit', e => {
   e.preventDefault();
   const text = el.input.value.trim();
-  if (text && !state.busy && state.account) sendMessage(text);
+  if (text && !state.busy && state.user) sendMessage(text);
 });
 el.input.addEventListener('keydown', e => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -409,7 +409,7 @@ el.newChat.addEventListener('click', () => {
   append(h('div', 'meta', 'New conversation started.'));
 });
 document.querySelectorAll('.suggestion').forEach(button => {
-  button.addEventListener('click', () => { if (!state.busy && state.account) sendMessage(button.textContent); });
+  button.addEventListener('click', () => { if (!state.busy && state.user) sendMessage(button.textContent); });
 });
 
 initAuth().catch(e => {
