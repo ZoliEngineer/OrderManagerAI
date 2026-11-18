@@ -68,7 +68,7 @@ class ChatControllerSecurityTest {
         mvc.perform(get("/config.json"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.clientId").value("client"))
-                .andExpect(jsonPath("$.scope").value("openid mcp.trade"));
+                .andExpect(jsonPath("$.scope").value("openid ordermanager/mcp.trade"));
     }
 
     @Test

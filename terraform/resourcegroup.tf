@@ -3,7 +3,7 @@
 # Resource Groups & Tag Editor (and can be used as a scope for Systems Manager, CloudWatch and cost views).
 resource "aws_resourcegroups_group" "main" {
   name        = local.prefix
-  description = "All resources of ${var.project_name} (${var.environment})"
+  description = "All resources of ${var.project_name} ${var.environment}"
 
   resource_query {
     query = jsonencode({

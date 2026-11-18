@@ -69,8 +69,6 @@ resource "aws_service_discovery_service" "this" {
       ttl  = 10
     }
   }
-
-  health_check_custom_config {}
 }
 
 # ── ALB routing (target group is free; the listener rules exist only while the ALB does) ──
