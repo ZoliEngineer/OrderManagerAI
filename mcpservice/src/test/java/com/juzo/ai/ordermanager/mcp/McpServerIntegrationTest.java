@@ -183,6 +183,28 @@ class McpServerIntegrationTest {
                 "ordermanager/mcp.trade");
     }
 
+    /**
+     * Behind CloudFront and the ALB the service sees plain HTTP on port 80. The 401 must still point agents at an
+     * https URL without ":80" (the ALB reports X-Forwarded-Port: 80; CloudFront reports the viewer scheme).
+     */
+    @Test
+    void unauthenticated_challengeUsesForwardedHttpsWithoutAlbPort() throws Exception {
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/mcp"))
+                        .header("Content-Type", "application/json")
+                        .header("CloudFront-Forwarded-Proto", "https")
+                        .header("X-Forwarded-Proto", "http")
+                        .header("X-Forwarded-Port", "80")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        String challenge = response.headers().firstValue("WWW-Authenticate").orElse("");
+        assertThat(challenge).contains("resource_metadata=\"https://");
+        assertThat(challenge).doesNotContain(":80/");
+    }
+
     /** ECS container health checks call these without a token; a 401 here would restart every task. */
     @Test
     void healthGroups_arePublic() throws Exception {
