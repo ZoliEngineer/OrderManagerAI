@@ -1,11 +1,9 @@
-import { useAccountDetails } from '../hooks/useAccountDetails';
+import { use, type ReactNode } from 'react';
+import { accountDetailsResource } from '../api/accountApi';
+import { useSelectedAccount } from '../hooks/useSelectedAccount';
 import type { AccountDetails, AccountId } from '../types/account';
-import { assertNever } from '../utils/errors';
 import { formatCurrency } from '../utils/format';
-
-interface PortfolioPageProps {
-  readonly selectedAccountId: AccountId | null;
-}
+import { DataBoundary } from './ErrorBoundary';
 
 function AccountStats({ details }: { readonly details: AccountDetails }) {
   return (
@@ -26,29 +24,18 @@ function AccountStats({ details }: { readonly details: AccountDetails }) {
   );
 }
 
-export function PortfolioPage({ selectedAccountId }: PortfolioPageProps) {
-  const details = useAccountDetails(selectedAccountId);
+interface PortfolioLayoutProps {
+  readonly subtitle?: string;
+  readonly summary: ReactNode;
+}
 
-  function renderSummary() {
-    switch (details.status) {
-      case 'idle':
-        return <p className="portfolio-empty-hint">Select an account to view details.</p>;
-      case 'loading':
-        return <p className="portfolio-loading">Loading…</p>;
-      case 'error':
-        return <p className="portfolio-error">Failed to load account details.</p>;
-      case 'success':
-        return <AccountStats details={details.data} />;
-      default:
-        return assertNever(details);
-    }
-  }
-
+/** The page frame, shared by the loading, error, empty and loaded states. */
+function PortfolioLayout({ subtitle, summary }: PortfolioLayoutProps) {
   return (
     <div className="portfolio-page">
       <div className="page-header">
         <h1 className="page-title">Portfolio</h1>
-        {details.status === 'success' && <span className="page-subtitle">{details.data.displayName}</span>}
+        {subtitle && <span className="page-subtitle">{subtitle}</span>}
       </div>
 
       <div className="portfolio-summary-row">
@@ -56,7 +43,7 @@ export function PortfolioPage({ selectedAccountId }: PortfolioPageProps) {
           <div className="card-header">
             <span className="card-title">Account Summary</span>
           </div>
-          <div className="portfolio-summary-body">{renderSummary()}</div>
+          <div className="portfolio-summary-body">{summary}</div>
         </div>
       </div>
 
@@ -69,5 +56,41 @@ export function PortfolioPage({ selectedAccountId }: PortfolioPageProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function LoadedPortfolio({ accountId }: { readonly accountId: AccountId }) {
+  const details = use(accountDetailsResource(accountId));
+  return <PortfolioLayout subtitle={details.displayName} summary={<AccountStats details={details} />} />;
+}
+
+export function PortfolioPage() {
+  const [accountId] = useSelectedAccount();
+
+  return (
+    <>
+      <title>Portfolio · OrderManager</title>
+      {accountId === null ? (
+        <PortfolioLayout summary={<p className="portfolio-empty-hint">Select an account to view details.</p>} />
+      ) : (
+        <DataBoundary
+          loading={<PortfolioLayout summary={<p className="portfolio-loading">Loading…</p>} />}
+          error={(_message, retry) => (
+            <PortfolioLayout
+              summary={
+                <p className="portfolio-error">
+                  Failed to load account details.{' '}
+                  <button className="btn-secondary" onClick={retry}>
+                    Retry
+                  </button>
+                </p>
+              }
+            />
+          )}
+        >
+          <LoadedPortfolio accountId={accountId} />
+        </DataBoundary>
+      )}
+    </>
   );
 }

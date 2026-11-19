@@ -1,5 +1,6 @@
-import { useState, type FormEvent, type MouseEvent } from 'react';
-import { placeOrder } from '../api/ordersApi';
+import { useActionState, useState, type MouseEvent, type SyntheticEvent } from 'react';
+import { useFormStatus } from 'react-dom';
+import { invalidateOrders, placeOrder } from '../api/ordersApi';
 import type { AccountId } from '../types/account';
 import type { StockQuote } from '../types/marketData';
 import type { OrderRequestBase, OrderSide, OrderType, PlaceOrderRequest } from '../types/order';
@@ -14,12 +15,13 @@ interface OrderTicketModalProps {
   readonly onClose: () => void;
 }
 
-/** The ticket's lifecycle as one union instead of separate `submitting` and `status` flags. */
-type TicketState =
+/** The result of the last submit. "Submitting" is not a state here: `useActionState` tracks it as `isPending`. */
+type TicketResult =
   | { readonly phase: 'editing' }
-  | { readonly phase: 'submitting' }
   | { readonly phase: 'submitted'; readonly message: string }
   | { readonly phase: 'failed'; readonly message: string };
+
+const EDITING: TicketResult = { phase: 'editing' };
 
 const SIDE_OPTIONS = [
   { value: 'BUY', label: 'BUY', className: 'buy' },
@@ -54,53 +56,83 @@ function buildRequest(
   return { ok: true, request: { ...base, type, quantity, limitPrice } };
 }
 
+/**
+ * Opens the native <dialog> as a modal when it mounts: focus is trapped inside it, Esc fires `cancel`,
+ * and the page behind becomes inert. React 19 runs the returned cleanup when the dialog unmounts.
+ * Module-level, so the ref callback keeps one identity and does not reopen the dialog on every render.
+ */
+function showAsModal(dialog: HTMLDialogElement | null): (() => void) | undefined {
+  if (!dialog) return undefined;
+  dialog.showModal();
+  return () => {
+    dialog.close();
+  };
+}
+
+/** `useFormStatus` reads the status of the enclosing <form>, so the button needs no props for it. */
+function SubmitButton({ disabled }: { readonly disabled: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" className="btn-primary" disabled={disabled || pending}>
+      {pending ? 'Placing…' : 'Place Order'}
+    </button>
+  );
+}
+
 export function OrderTicketModal({ stock, accountId, onClose }: OrderTicketModalProps) {
   const [side, setSide] = useState<OrderSide>('BUY');
   const [type, setType] = useState<OrderType>('MARKET');
+  // Controlled inputs on purpose: React resets uncontrolled fields after a form Action, which would
+  // wipe what the user typed when the order is rejected.
   const [quantity, setQuantity] = useState('');
   const [limitPrice, setLimitPrice] = useState(stock.price.toFixed(2));
-  const [ticket, setTicket] = useState<TicketState>({ phase: 'editing' });
 
-  const locked = ticket.phase === 'submitting' || ticket.phase === 'submitted';
+  // A form Action: React calls it on submit inside a transition and tracks `isPending` for us.
+  const [result, submitAction, isPending] = useActionState(async (): Promise<TicketResult> => {
+    const built = buildRequest({ accountId, ticker: stock.ticker, side }, type, quantity, limitPrice);
+    if (!built.ok) return { phase: 'failed', message: built.error };
+    try {
+      const response = await placeOrder(built.request);
+      invalidateOrders(accountId);
+      return { phase: 'submitted', message: response.message ?? 'Order submitted.' };
+    } catch (err: unknown) {
+      return { phase: 'failed', message: toErrorMessage(err) };
+    }
+  }, EDITING);
+
+  const locked = isPending || result.phase === 'submitted';
 
   function selectType(next: OrderType): void {
     setType(next);
     setLimitPrice(stock.price.toFixed(2));
   }
 
-  async function submit(): Promise<void> {
-    const built = buildRequest({ accountId, ticker: stock.ticker, side }, type, quantity, limitPrice);
-    if (!built.ok) {
-      setTicket({ phase: 'failed', message: built.error });
-      return;
-    }
-    setTicket({ phase: 'submitting' });
-    try {
-      const response = await placeOrder(built.request);
-      setTicket({ phase: 'submitted', message: response.message ?? 'Order submitted.' });
-    } catch (err: unknown) {
-      setTicket({ phase: 'failed', message: toErrorMessage(err) });
-    }
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>): void {
+  function handleCancel(event: SyntheticEvent<HTMLDialogElement>): void {
+    // Esc: React owns the open state (the dialog closes by unmounting), and an order in flight stays open.
     event.preventDefault();
-    void submit();
+    if (!isPending) onClose();
   }
 
-  function handleBackdropClick(event: MouseEvent<HTMLDivElement>): void {
-    if (event.target === event.currentTarget) onClose();
+  function handleBackdropClick(event: MouseEvent<HTMLDialogElement>): void {
+    // A click on the ::backdrop targets the <dialog> itself; clicks on the panel target its children.
+    if (event.target === event.currentTarget && !isPending) onClose();
   }
 
   return (
-    <div className="modal-backdrop" onClick={handleBackdropClick}>
-      <div className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ticket-title">
+    <dialog
+      ref={showAsModal}
+      className="modal-dialog"
+      aria-labelledby="ticket-title"
+      onCancel={handleCancel}
+      onClick={handleBackdropClick}
+    >
+      <div className="modal-panel">
         <div className="modal-header">
           <div className="modal-title-group" id="ticket-title">
             <span className="modal-ticker">{stock.ticker}</span>
             <span className="modal-name">{stock.name}</span>
           </div>
-          <button className="modal-close" onClick={onClose} aria-label="Close">
+          <button className="modal-close" onClick={onClose} aria-label="Close" disabled={isPending}>
             ✕
           </button>
         </div>
@@ -110,7 +142,7 @@ export function OrderTicketModal({ stock, accountId, onClose }: OrderTicketModal
           <span className="modal-price-value">{formatCurrency(stock.price)}</span>
         </div>
 
-        <form className="modal-form" onSubmit={handleSubmit}>
+        <form className="modal-form" action={submitAction}>
           <div className="modal-field">
             <span className="modal-label">Side</span>
             <ToggleGroup options={SIDE_OPTIONS} value={side} onChange={setSide} />
@@ -127,6 +159,7 @@ export function OrderTicketModal({ stock, accountId, onClose }: OrderTicketModal
             </label>
             <input
               id="qty"
+              name="quantity"
               className="modal-input"
               type="number"
               min="0.0001"
@@ -153,6 +186,7 @@ export function OrderTicketModal({ stock, accountId, onClose }: OrderTicketModal
                 </label>
                 <input
                   id="limit-price"
+                  name="limitPrice"
                   className="modal-input"
                   type="number"
                   min="0.0001"
@@ -166,22 +200,23 @@ export function OrderTicketModal({ stock, accountId, onClose }: OrderTicketModal
             )}
           </div>
 
-          {(ticket.phase === 'submitted' || ticket.phase === 'failed') && (
-            <p className={`modal-status modal-status--${ticket.phase === 'submitted' ? 'ok' : 'err'}`}>
-              {ticket.message}
+          {result.phase !== 'editing' && (
+            <p
+              className={`modal-status modal-status--${result.phase === 'submitted' ? 'ok' : 'err'}`}
+              role={result.phase === 'failed' ? 'alert' : 'status'}
+            >
+              {result.message}
             </p>
           )}
 
           <div className="modal-actions">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={locked}>
-              Cancel
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={isPending}>
+              {result.phase === 'submitted' ? 'Close' : 'Cancel'}
             </button>
-            <button type="submit" className="btn-primary" disabled={locked}>
-              {ticket.phase === 'submitting' ? 'Placing…' : 'Place Order'}
-            </button>
+            <SubmitButton disabled={locked} />
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   );
 }

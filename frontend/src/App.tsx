@@ -1,50 +1,44 @@
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useAuth } from 'react-oidc-context';
-import { signOut } from './auth/oidc';
+import { NavLink, Outlet, useLocation } from 'react-router';
+import { signIn, signOut } from './auth/oidc';
 import { AccountSelector } from './components/AccountSelector';
-import { MarketDataTable } from './components/MarketDataTable';
-import { OrdersPage } from './components/OrdersPage';
-import { PortfolioPage } from './components/PortfolioPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useMarketStatus } from './hooks/useMarketStatus';
-import type { AccountId } from './types/account';
+import { useSelectedAccount } from './hooks/useSelectedAccount';
+import { retryFailed } from './api/resource';
+import { toErrorMessage } from './utils/errors';
 import { marketStatusLabel } from './utils/marketStatus';
 import './styles/layout.css';
-import './styles/global.css';
 
 interface NavItem {
-  readonly id: string;
+  readonly path: `/${string}`;
   readonly icon: string;
   readonly label: string;
 }
 
-/**
- * `as const` keeps the ids as literals, and `satisfies` checks the shape without widening them.
- * `PageId` is then derived from the data: 'market-data' | 'portfolio' | 'orders' | 'buy-sell'.
- */
 const NAV_ITEMS = [
-  { id: 'market-data', icon: '▦', label: 'Market Data' },
-  { id: 'portfolio', icon: '◈', label: 'Portfolio' },
-  { id: 'orders', icon: '⇅', label: 'Orders' },
-  { id: 'buy-sell', icon: '⊕', label: 'Buy / Sell' },
+  { path: '/market', icon: '▦', label: 'Market Data' },
+  { path: '/portfolio', icon: '◈', label: 'Portfolio' },
+  { path: '/orders', icon: '⇅', label: 'Orders' },
 ] as const satisfies readonly NavItem[];
-
-type PageId = (typeof NAV_ITEMS)[number]['id'];
 
 function MarketStatusLabel() {
   const status = useMarketStatus();
   return <span className="topbar-status">{marketStatusLabel(status)}</span>;
 }
 
-function SignInScreen({ onSignIn }: { readonly onSignIn: () => void }) {
+function SignInScreen() {
   return (
     <div className="app-shell">
+      <title>Sign in · OrderManager</title>
       <div className="signin-screen">
         <span className="signin-logo">
           Order<span>Manager</span>
         </span>
         <div className="signin-card">
           <p>Sign in to continue.</p>
-          <button className="btn-primary" onClick={onSignIn}>
+          <button className="btn-primary" onClick={() => void signIn()}>
             Sign in
           </button>
         </div>
@@ -53,33 +47,26 @@ function SignInScreen({ onSignIn }: { readonly onSignIn: () => void }) {
   );
 }
 
-function MarketDataPage({ selectedAccountId }: { readonly selectedAccountId: AccountId | null }) {
+function PageError({ message, retry }: { readonly message: string; readonly retry: () => void }) {
   return (
-    <>
-      <div className="page-header">
-        <h1 className="page-title">Market Data</h1>
-        <span className="page-subtitle">S&amp;P 500 — Top 10</span>
-      </div>
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Equities</span>
-        </div>
-        <MarketDataTable selectedAccountId={selectedAccountId} />
-      </div>
-    </>
+    <div className="card">
+      <p className="status-error">Something went wrong: {message}</p>
+      <button className="btn-secondary" onClick={retry}>
+        Retry
+      </button>
+    </div>
   );
 }
 
+/** The layout route: auth gate, top bar, sidebar, and the current page in `<Outlet />`. */
 export function App() {
   const auth = useAuth();
-  const [activePage, setActivePage] = useState<PageId>('market-data');
-  const [selectedAccountId, setSelectedAccountId] = useState<AccountId | null>(null);
+  const { pathname, search } = useLocation();
+  const [selectedAccountId, selectAccount] = useSelectedAccount();
 
+  // Nothing renders (and so no route redirects) until the OIDC callback has been processed.
   if (auth.isLoading) return null;
-
-  if (!auth.isAuthenticated) {
-    return <SignInScreen onSignIn={() => void auth.signinRedirect()} />;
-  }
+  if (!auth.isAuthenticated) return <SignInScreen />;
 
   return (
     <div className="app-shell">
@@ -90,7 +77,7 @@ export function App() {
         <div className="topbar-divider" />
         <MarketStatusLabel />
         <div className="topbar-spacer" />
-        <AccountSelector selectedId={selectedAccountId} onSelect={setSelectedAccountId} />
+        <AccountSelector selectedId={selectedAccountId} onSelect={selectAccount} />
         <div className="topbar-divider" />
         <button className="btn-secondary" onClick={() => void signOut()}>
           Sign out
@@ -98,26 +85,31 @@ export function App() {
       </header>
 
       <div className="app-body">
-        <nav className="sidebar">
+        <nav className="sidebar" aria-label="Main">
           <span className="sidebar-section-label">Navigation</span>
           {NAV_ITEMS.map((item) => (
-            <div
-              key={item.id}
-              className={`sidebar-item${activePage === item.id ? ' active' : ''}`}
-              onClick={() => {
-                setActivePage(item.id);
-              }}
-            >
-              <span className="sidebar-item-icon">{item.icon}</span>
+            // NavLink renders a real <a> with `aria-current="page"` and the `active` class when it matches.
+            // The search string is kept, so switching pages keeps the selected account.
+            <NavLink key={item.path} to={{ pathname: item.path, search }} className="sidebar-item">
+              <span className="sidebar-item-icon" aria-hidden="true">
+                {item.icon}
+              </span>
               {item.label}
-            </div>
+            </NavLink>
           ))}
         </nav>
 
         <main className="main-content">
-          {activePage === 'market-data' && <MarketDataPage selectedAccountId={selectedAccountId} />}
-          {activePage === 'portfolio' && <PortfolioPage selectedAccountId={selectedAccountId} />}
-          {activePage === 'orders' && <OrdersPage selectedAccountId={selectedAccountId} />}
+          {/* Keyed by path: navigating away from a failed page clears its error. */}
+          <ErrorBoundary
+            key={pathname}
+            onReset={retryFailed}
+            fallback={(error, reset) => <PageError message={toErrorMessage(error)} retry={reset} />}
+          >
+            <Suspense fallback={<p className="status-loading">Loading…</p>}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

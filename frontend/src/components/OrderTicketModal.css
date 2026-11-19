@@ -1,11 +1,14 @@
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
+/* Native <dialog> opened with showModal(): the browser centres it in the top layer, above everything. */
+.modal-dialog {
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: calc(100vw - 32px);
+  color: inherit;
+}
+
+.modal-dialog::backdrop {
   background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
 }
 
 .modal-panel {

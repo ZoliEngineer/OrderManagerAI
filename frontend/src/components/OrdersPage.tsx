@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { useOrders } from '../hooks/useOrders';
+import { useState, type ReactNode } from 'react';
+import { useOrders, type BlotterOrder } from '../hooks/useOrders';
+import { useSelectedAccount } from '../hooks/useSelectedAccount';
 import type { AccountId } from '../types/account';
-import { ORDER_STATUSES, type Order, type OrderId, type OrderStatus } from '../types/order';
+import { ORDER_STATUSES, type OrderId, type OrderStatus } from '../types/order';
 import { formatPrice, formatQuantity, formatTimestamp } from '../utils/format';
 import { DEFAULT_SORT, nextSort, sortOrders, type SortColumn, type SortState } from '../utils/orderSort';
+import { DataBoundary } from './ErrorBoundary';
 import '../styles/OrdersPage.css';
 
 /** `Record<OrderStatus, …>` is exhaustive: a new status without a label does not compile. */
@@ -67,14 +69,16 @@ function SortHeader({ column, label, numeric, sort, onSort }: SortHeaderProps) {
 }
 
 interface OrderRowProps {
-  readonly order: Order;
-  readonly cancelling: boolean;
+  readonly order: BlotterOrder;
   readonly onCancel: (orderId: OrderId) => void;
 }
 
-function OrderRow({ order, cancelling, onCancel }: OrderRowProps) {
+function OrderRow({ order, onCancel }: OrderRowProps) {
+  const className = ['order-row', `order-row--${statusModifier(order.status)}`, order.pending && 'order-row--pending']
+    .filter(Boolean)
+    .join(' ');
   return (
-    <tr className={`order-row order-row--${statusModifier(order.status)}`}>
+    <tr className={className} aria-busy={order.pending ?? false}>
       <td className="col-time">{formatTimestamp(order.createdAt)}</td>
       <td>
         <span className="order-ticker">{order.ticker}</span>
@@ -99,12 +103,11 @@ function OrderRow({ order, cancelling, onCancel }: OrderRowProps) {
         {CANCELLABLE.has(order.status) && (
           <button
             className="btn-cancel"
-            disabled={cancelling}
             onClick={() => {
               onCancel(order.id);
             }}
           >
-            {cancelling ? '…' : 'Cancel'}
+            Cancel
           </button>
         )}
       </td>
@@ -112,16 +115,34 @@ function OrderRow({ order, cancelling, onCancel }: OrderRowProps) {
   );
 }
 
-interface OrdersPageProps {
-  readonly selectedAccountId: AccountId | null;
+interface OrdersLayoutProps {
+  readonly subtitle?: string;
+  readonly children: ReactNode;
 }
 
-export function OrdersPage({ selectedAccountId }: OrdersPageProps) {
-  const { orders: ordersState, cancel, cancelling, cancelError } = useOrders(selectedAccountId);
+/** The page frame, shared by the loading, error, empty and loaded states. */
+function OrdersLayout({ subtitle, children }: OrdersLayoutProps) {
+  return (
+    <div className="orders-page">
+      <div className="page-header">
+        <h1 className="page-title">Orders</h1>
+        {subtitle && <span className="page-subtitle">{subtitle}</span>}
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Order Blotter</span>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function OrderBlotter({ accountId }: { readonly accountId: AccountId }) {
+  const { orders, cancel, cancelError } = useOrders(accountId);
   const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const [hiddenStatuses, setHiddenStatuses] = useState<ReadonlySet<OrderStatus>>(new Set());
 
-  const orders: readonly Order[] = ordersState.status === 'success' ? ordersState.data : [];
   // Iterating the `as const` tuple gives a lifecycle order (NEW → … → REJECTED) instead of alphabetical.
   const presentStatuses = ORDER_STATUSES.filter((status) => orders.some((o) => o.status === status));
   const visible = sortOrders(
@@ -141,87 +162,98 @@ export function OrdersPage({ selectedAccountId }: OrdersPageProps) {
     setSort((prev) => nextSort(prev, column));
   }
 
-  function renderMessage() {
-    switch (ordersState.status) {
-      case 'idle':
-        return <p className="orders-empty">Select an account to view orders.</p>;
-      case 'loading':
-        return <p className="orders-loading">Loading…</p>;
-      case 'error':
-        return <p className="orders-error">Failed to load orders: {ordersState.error}</p>;
-      case 'success':
-        if (orders.length === 0) return <p className="orders-empty">No orders found for this account.</p>;
-        if (visible.length === 0) return <p className="orders-empty">No orders match the selected filters.</p>;
-        return null;
-    }
-  }
+  return (
+    <OrdersLayout subtitle={`${orders.length} order${orders.length === 1 ? '' : 's'}`}>
+      {presentStatuses.length > 0 && (
+        <div className="orders-filters">
+          {presentStatuses.map((status) => (
+            <button
+              key={status}
+              className={`order-status order-status--${statusModifier(status)}${hiddenStatuses.has(status) ? ' filter-inactive' : ''}`}
+              aria-pressed={!hiddenStatuses.has(status)}
+              onClick={() => {
+                toggleStatus(status);
+              }}
+            >
+              {STATUS_LABEL[status]}
+            </button>
+          ))}
+          {hiddenStatuses.size > 0 && (
+            <button
+              className="filter-clear"
+              onClick={() => {
+                setHiddenStatuses(new Set());
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
+      {cancelError && (
+        <p className="orders-error" role="alert">
+          Cancel failed: {cancelError}
+        </p>
+      )}
+      {orders.length === 0 && <p className="orders-empty">No orders found for this account.</p>}
+      {orders.length > 0 && visible.length === 0 && <p className="orders-empty">No orders match the selected filters.</p>}
+
+      {visible.length > 0 && (
+        <div className="orders-table-wrap">
+          <table className="orders-table">
+            <thead>
+              <tr>
+                {COLUMNS.map((def) => (
+                  <SortHeader key={def.column} {...def} sort={sort} onSort={handleSort} />
+                ))}
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((order) => (
+                <OrderRow key={order.id} order={order} onCancel={cancel} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </OrdersLayout>
+  );
+}
+
+export function OrdersPage() {
+  const [accountId] = useSelectedAccount();
 
   return (
-    <div className="orders-page">
-      <div className="page-header">
-        <h1 className="page-title">Orders</h1>
-        {ordersState.status === 'success' && (
-          <span className="page-subtitle">
-            {orders.length} order{orders.length === 1 ? '' : 's'}
-          </span>
-        )}
-      </div>
-
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Order Blotter</span>
-        </div>
-
-        {presentStatuses.length > 0 && (
-          <div className="orders-filters">
-            {presentStatuses.map((status) => (
-              <button
-                key={status}
-                className={`order-status order-status--${statusModifier(status)}${hiddenStatuses.has(status) ? ' filter-inactive' : ''}`}
-                aria-pressed={!hiddenStatuses.has(status)}
-                onClick={() => {
-                  toggleStatus(status);
-                }}
-              >
-                {STATUS_LABEL[status]}
-              </button>
-            ))}
-            {hiddenStatuses.size > 0 && (
-              <button
-                className="filter-clear"
-                onClick={() => {
-                  setHiddenStatuses(new Set());
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-        )}
-
-        {cancelError && <p className="orders-error">Cancel failed: {cancelError}</p>}
-        {renderMessage()}
-
-        {visible.length > 0 && (
-          <div className="orders-table-wrap">
-            <table className="orders-table">
-              <thead>
-                <tr>
-                  {COLUMNS.map((def) => (
-                    <SortHeader key={def.column} {...def} sort={sort} onSort={handleSort} />
-                  ))}
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((order) => (
-                  <OrderRow key={order.id} order={order} cancelling={cancelling.has(order.id)} onCancel={cancel} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
+    <>
+      <title>Orders · OrderManager</title>
+      {accountId === null ? (
+        <OrdersLayout>
+          <p className="orders-empty">Select an account to view orders.</p>
+        </OrdersLayout>
+      ) : (
+        <DataBoundary
+          loading={
+            <OrdersLayout>
+              <p className="orders-loading">Loading…</p>
+            </OrdersLayout>
+          }
+          error={(message, retry) => (
+            <OrdersLayout>
+              <p className="orders-error">
+                Failed to load orders: {message}{' '}
+                <button className="filter-clear" onClick={retry}>
+                  Retry
+                </button>
+              </p>
+            </OrdersLayout>
+          )}
+        >
+          {/* Keyed: a new account gets fresh blotter state (orders promise, filters, sort). */}
+          <OrderBlotter key={accountId} accountId={accountId} />
+        </DataBoundary>
+      )}
+    </>
   );
 }
