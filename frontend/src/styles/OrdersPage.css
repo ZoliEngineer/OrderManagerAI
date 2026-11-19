@@ -219,3 +219,8 @@
   cursor: help;
   opacity: 0.8;
 }
+
+/* An optimistic change (e.g. a cancel) the server has not confirmed yet. */
+.order-row--pending {
+  opacity: 0.55;
+}

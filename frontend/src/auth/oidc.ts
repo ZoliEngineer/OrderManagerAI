@@ -1,4 +1,4 @@
-import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
+import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
 import { getConfig } from '../config';
 
 // Generic OIDC (Cognito hosted UI, Entra ID, Keycloak, ...) with authorization code + PKCE.
@@ -37,6 +37,18 @@ export async function signOut(): Promise<void> {
   window.location.assign(getConfig().oidc.logoutUrl || '/');
 }
 
-export function onSigninCallback(): void {
-  window.history.replaceState({}, document.title, window.location.pathname);
+/** Starts the login redirect, remembering the current page so the user lands back on it. */
+export async function signIn(): Promise<void> {
+  const returnTo = `${window.location.pathname}${window.location.search}`;
+  await getUserManager().signinRedirect({ state: returnTo });
+}
+
+/**
+ * Where to go after the login callback. The redirect URI stays the origin root (so the IdP's allowed
+ * callback URLs don't change); the page the user started on travels in the OIDC `state`.
+ * Only same-origin paths are accepted, so the state cannot be used as an open redirect.
+ */
+export function returnPath(user: User | undefined): string {
+  const state = user?.state;
+  return typeof state === 'string' && state.startsWith('/') && !state.startsWith('//') ? state : '/';
 }

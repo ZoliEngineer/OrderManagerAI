@@ -1,53 +1,60 @@
-import { useCallback, useMemo, useState } from 'react';
-import { cancelOrder, getOrders } from '../api/ordersApi';
+import { startTransition, use, useOptimistic, useState } from 'react';
+import { cancelOrder, invalidateOrders, ordersResource } from '../api/ordersApi';
 import type { AccountId } from '../types/account';
 import type { Order, OrderId } from '../types/order';
 import { toErrorMessage } from '../utils/errors';
-import { success, type AsyncState } from './asyncState';
-import { useAsync } from './useAsync';
+
+/** An order as shown in the blotter: `pending` marks an optimistic change the server has not confirmed yet. */
+export interface BlotterOrder extends Order {
+  readonly pending?: true;
+}
 
 export interface UseOrdersResult {
-  readonly orders: AsyncState<readonly Order[]>;
+  readonly orders: readonly BlotterOrder[];
   readonly cancel: (orderId: OrderId) => void;
-  readonly cancelling: ReadonlySet<OrderId>;
   readonly cancelError: string | null;
 }
 
-function withSet<T>(set: ReadonlySet<T>, value: T, present: boolean): ReadonlySet<T> {
-  const next = new Set(set);
-  if (present) next.add(value);
-  else next.delete(value);
-  return next;
+function markCancelled(orders: readonly BlotterOrder[], orderId: OrderId): readonly BlotterOrder[] {
+  return orders.map((o) => (o.id === orderId ? { ...o, status: 'CANCELLED', pending: true } : o));
 }
 
-export function useOrders(accountId: AccountId | null): UseOrdersResult {
-  const loader = useMemo(() => (accountId ? () => getOrders(accountId) : null), [accountId]);
-  const fetched = useAsync(loader);
-
-  const [cancelled, setCancelled] = useState<ReadonlySet<OrderId>>(new Set());
-  const [cancelling, setCancelling] = useState<ReadonlySet<OrderId>>(new Set());
+/**
+ * The account's orders, read with `use()` (the caller must sit inside Suspense and an error boundary),
+ * plus an optimistic cancel. Mount it once per account (`key={accountId}`): the account is fixed for the
+ * lifetime of the state below.
+ */
+export function useOrders(accountId: AccountId): UseOrdersResult {
+  // The promise is React state, not a fresh `ordersResource()` call per render: render must stay pure
+  // (the React Compiler caches calls whose inputs did not change), so a refetch is a state update.
+  const [ordersPromise, setOrdersPromise] = useState(() => ordersResource(accountId));
+  const fetched: readonly BlotterOrder[] = use(ordersPromise);
+  // While a cancel Action is in flight the row already shows CANCELLED. When the Action ends, React
+  // drops the optimistic value: on success the refetched list confirms it, on failure it rolls back.
+  const [orders, addOptimisticCancel] = useOptimistic(fetched, markCancelled);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
-  const cancel = useCallback((orderId: OrderId) => {
-    setCancelling((prev) => withSet(prev, orderId, true));
+  function cancel(orderId: OrderId): void {
     setCancelError(null);
-    cancelOrder(orderId)
-      .then(() => {
-        setCancelled((prev) => withSet(prev, orderId, true));
-      })
-      .catch((err: unknown) => {
+    startTransition(async () => {
+      addOptimisticCancel(orderId);
+      try {
+        await cancelOrder(orderId);
+      } catch (err: unknown) {
         setCancelError(toErrorMessage(err));
-      })
-      .finally(() => {
-        setCancelling((prev) => withSet(prev, orderId, false));
+        return;
+      }
+      // Refetch inside the Action, so the optimistic row stays until the fresh list has arrived.
+      // A failed refetch surfaces through `use()` and the error boundary on the next render.
+      invalidateOrders(accountId);
+      const refreshed = ordersResource(accountId);
+      await refreshed.catch(() => undefined);
+      // State updates after an `await` need their own transition to stay part of the Action.
+      startTransition(() => {
+        setOrdersPromise(refreshed);
       });
-  }, []);
+    });
+  }
 
-  // Apply successful cancellations on top of the fetched list instead of copying it into state.
-  const orders = useMemo((): AsyncState<readonly Order[]> => {
-    if (fetched.status !== 'success') return fetched;
-    return success(fetched.data.map((o): Order => (cancelled.has(o.id) ? { ...o, status: 'CANCELLED' } : o)));
-  }, [fetched, cancelled]);
-
-  return { orders, cancel, cancelling, cancelError };
+  return { orders, cancel, cancelError };
 }

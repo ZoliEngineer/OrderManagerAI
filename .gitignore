@@ -37,6 +37,7 @@ frontend/build/*
 
 # Local secrets
 .env
+.env*.local
 terraform.tfvars
 terraform/.terraform/terraform.tfstate
 REQUIREMENTS.txt

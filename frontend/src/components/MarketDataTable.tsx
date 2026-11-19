@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMarketData } from '../hooks/useMarketData';
-import type { AccountId } from '../types/account';
+import { useSelectedAccount } from '../hooks/useSelectedAccount';
 import type { Stock, StockQuote } from '../types/marketData';
 import { formatCurrency, formatSigned } from '../utils/format';
 import { OrderTicketModal } from './OrderTicketModal';
 import './MarketDataTable.css';
-
-interface MarketDataTableProps {
-  readonly selectedAccountId: AccountId | null;
-}
 
 type Direction = 'up' | 'down' | 'flat';
 /** Template literal type: exactly the CSS classes that exist ('price-up' | 'price-down' | 'price-flat'). */
@@ -93,7 +89,8 @@ function StockRow({ stock, flash, onSelect }: StockRowProps) {
   );
 }
 
-export function MarketDataTable({ selectedAccountId }: MarketDataTableProps) {
+export function MarketDataTable() {
+  const [selectedAccountId] = useSelectedAccount();
   const marketData = useMarketData();
   const stocks = marketData.status === 'success' ? marketData.data : [];
   const flashes = usePriceFlashes(stocks);

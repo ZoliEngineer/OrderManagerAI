@@ -95,6 +95,7 @@
   border-left: 3px solid transparent;
   transition: background 0.15s, color 0.15s;
   user-select: none;
+  text-decoration: none;
 }
 
 .sidebar-item:hover {

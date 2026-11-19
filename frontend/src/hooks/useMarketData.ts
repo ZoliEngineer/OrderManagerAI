@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getAccessToken } from '../auth/oidc';
 import { getMarketData } from '../api/marketDataApi';
 import { connectMarketDataStream, type Disconnect } from '../api/marketDataWebSocket';
@@ -56,9 +56,8 @@ export function useMarketData(): AsyncState<readonly Stock[]> {
     };
   }, []);
 
-  return useMemo(() => {
-    if (error !== null) return failure(error);
-    if (stocks === null) return LOADING;
-    return success(Object.values(stocks).toSorted((a, b) => a.ticker.localeCompare(b.ticker)));
-  }, [stocks, error]);
+  // No useMemo: the React Compiler caches this result until `stocks` or `error` changes.
+  if (error !== null) return failure(error);
+  if (stocks === null) return LOADING;
+  return success(Object.values(stocks).toSorted((a, b) => a.ticker.localeCompare(b.ticker)));
 }
